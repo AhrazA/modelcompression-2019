@@ -32,7 +32,7 @@ By default, this will train a model and save it to `models/cifar_classifier.pt`.
 #### Evaluate Pruning
 
 ##### Step 1
-In order to prune and evaluate a pruned model, ensure that a trained model exists. If you are not sure how to do this, follow the instructions [here](####train-a-model-from-scratch).
+In order to prune and evaluate a pruned model, ensure that a trained model exists. If you are not sure how to do this, follow the instructions [here](#train-a-model-from-scratch).
 
 ##### Step 2
 Once confirming a trained model exists, ensure that there exists an appropriate test time configuration for that model. This can be found in `main.py`, under the `configurations` variable. *This will change in the future to a more robust solution.*
