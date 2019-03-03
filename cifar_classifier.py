@@ -1,16 +1,20 @@
-import torch.nn as nn
-import torch.nn.functional as F
-from pruning.masked_conv_2d import MaskedConv2d
-from pruning.masked_linear import MaskedLinear
-from torchvision import datasets, transforms
+import argparse
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torchvision import datasets, transforms
 
-class CifarClassifier(nn.Module):
+from classifier import Classifier
+from classifier_utils import setup_default_args
+from pruning.masked_conv_2d import MaskedConv2d
+from pruning.masked_linear import MaskedLinear
+
+
+class MaskedCifar(nn.Module):
     def __init__(self):
-        super(CifarClassifier, self).__init__()
+        super(MaskedCifar, self).__init__()
         self.conv1 = MaskedConv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = MaskedConv2d(6, 16, 5)
@@ -34,48 +38,38 @@ class CifarClassifier(nn.Module):
         self.fc2.set_mask(masks[3])
         self.fc3.set_mask(masks[4])
 
-if __name__ == '__main__':
-    import torch.optim as optim
-
-    net = CifarClassifier().cuda()
-
-    transform = transforms.Compose(
-    [transforms.ToTensor(),
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-
-    trainset = datasets.CIFAR10(root='./data', train=True,
-                                            download=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=4,
-                                            shuffle=True, num_workers=2)
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-
-    for epoch in range(2):  # loop over the dataset multiple times
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            # get the inputs
-            inputs, labels = data
-
-            # zero the parameter gradients
-            optimizer.zero_grad()
-
-            # forward + backward + optimize
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            # print statistics
-            running_loss += loss.item()
-            if i % 2000 == 1999:    # print every 2000 mini-batches
-                print('[%d, %5d] loss: %.3f' %
-                    (epoch + 1, i + 1, running_loss / 2000))
-                running_loss = 0.0
-
-        print('Finished Training')
+def main():
+    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    setup_default_args(parser)
+    args = parser.parse_args()
     
-    torch.save(net.state_dict(),"cifar_classifier.pt")
+    torch.manual_seed(args.seed)
+    kwargs = {'num_workers': 1, 'pin_memory': True} if not args.no_cuda else {}
 
+    train_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10('./data', train=True, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                       ])),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
+    
+    test_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10('./data', train=False, transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                       ])),
+        batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
+    classifier = Classifier(MaskedCifar(), 'cuda', train_loader, test_loader)
+    optimizer = optim.SGD(classifier.model.parameters(), lr=args.lr, momentum=args.momentum)
 
+    for epoch in range(1, args.epochs + 1):
+        classifier.train(args.log_interval, optimizer, epoch, F.cross_entropy)
+        classifier.test(F.cross_entropy)
+    
+    if (args.save_model):
+        torch.save(classifier.model.state_dict(),"models/cifar_classifier.pt")
+
+if __name__ == '__main__':
+    main()
