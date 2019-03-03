@@ -33,7 +33,7 @@ def load_model(model_file_name, configuration):
     model.load_state_dict(torch.load('./models/' + model_file_name))
 
     test_data = configuration['dataset'](
-        './data', train=False, transform=transforms.Compose(configuration['transforms'])
+        './data', train=False, download=True, transform=transforms.Compose(configuration['transforms'])
     )
 
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=1000, shuffle=True, num_workers=1, pin_memory=True)
