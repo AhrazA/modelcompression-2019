@@ -210,15 +210,14 @@ def gen_masks_recursive(model, threshold):
     
     return masks
 
-
 def weight_prune_residiual(model, pruning_perc):
     weights = get_all_weights_for_nested_model(model)
     threshold = np.percentile(np.array(weights), pruning_perc)
-    return threshold
-
-if __name__ == '__main__':
-    model = resnet18(pretrained=True)
-    threshold = weight_prune_residiual(model, 50)
     masks = gen_masks_recursive(model, threshold)
     model.set_mask(masks)
     prune_rate(model)
+    return model
+
+if __name__ == '__main__':
+    model = resnet18(pretrained=True)
+    model = weight_prune_residiual(model, 50.)
