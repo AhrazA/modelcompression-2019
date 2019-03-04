@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 from pruning.masked_conv_2d import MaskedConv2d
 from pruning.masked_linear import MaskedLinear
+from pruning.methods import prune_rate
 import numpy as np
 
 model_urls = {
@@ -24,15 +25,17 @@ def conv1x1(in_planes, out_planes, stride=1):
 
 class MaskedSequential(nn.Sequential):
     # Applies masks per residual block
-    def set_mask(masks):
+    def set_mask(self, masks):
+        iter_masks = iter(masks)
         for index, layer in enumerate(self.children()):
-            layer.set_mask(masks[index])
+            if 'Masked' in str(type(layer)):
+                layer.set_mask(next(iter_masks))
 
-class BasicBlock(nn.Module):
+class MaskedBasicBlock(nn.Module):
     expansion = 1
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
-        super(BasicBlock, self).__init__()
+        super(MaskedBasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
@@ -61,7 +64,7 @@ class BasicBlock(nn.Module):
     
     def set_mask(self, masks):
         self.conv1.set_mask(masks[0])
-        self.conv2.set_mask(masks[0])
+        self.conv2.set_mask(masks[1])
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -105,9 +108,9 @@ class Bottleneck(nn.Module):
         self.conv2.set_mask(masks[1])
         self.conv3.set_mask(masks[2])
 
-class ResNet(nn.Module):
+class MaskedResNet(nn.Module):
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False):
-        super(ResNet, self).__init__()
+        super(MaskedResNet, self).__init__()
         self.inplanes = 64
         self.conv1 = MaskedConv2d(3, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
@@ -119,7 +122,7 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.fc = MaskedLinear(512 * block.expansion, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -135,7 +138,7 @@ class ResNet(nn.Module):
             for m in self.modules():
                 if isinstance(m, Bottleneck):
                     nn.init.constant_(m.bn3.weight, 0)
-                elif isinstance(m, BasicBlock):
+                elif isinstance(m, MaskedBasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)
 
     def _make_layer(self, block, planes, blocks, stride=1):
@@ -155,13 +158,12 @@ class ResNet(nn.Module):
         return MaskedSequential(*layers)
 
     def set_mask(self, masks):
-        print(len(masks))
         self.conv1.set_mask(masks[0])
         self.layer1.set_mask(masks[1])
         self.layer2.set_mask(masks[2])
         self.layer3.set_mask(masks[3])
         self.layer4.set_mask(masks[4])
-        self.fc.set_masks(masks[5])
+        self.fc.set_mask(masks[5])
 
 
 def resnet18(pretrained=False, **kwargs):
@@ -169,7 +171,7 @@ def resnet18(pretrained=False, **kwargs):
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
+    model = MaskedResNet(MaskedBasicBlock, [2, 2, 2, 2], **kwargs)
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
     return model
@@ -184,36 +186,30 @@ def get_all_weights_for_nested_model(model):
         for p in model.parameters():
             if len(p.data.size()) != 1: # Avoid bias parameters
                 weights += list(p.cpu().data.abs().numpy().flatten())
-    
+
     return weights
 
-def generate_masks_for_layer(model, threshold):
+def gen_masks_for_layer(model, threshold):
     # generate mask
-    masks = []
     for p in model.parameters():
         if len(p.data.size()) != 1:
             pruned_inds = p.data.abs() > threshold
-            masks.append(pruned_inds.float())
-    return masks
-
-def generate_masks(threshold):
+            return pruned_inds.float()
+    
+def gen_masks_recursive(model, threshold):
     masks = []
-
+    
     for module in model.children():
-        if type(module) == MaskedConv2d: # First conv layer
-            masks.append(generate_masks_for_layer(module, threshold))
-        if type(model) == MaskedSequential:
-            sequential_masks = []
-            for sequential_child in model.children():
-                if type(model) == BasicBlock:
-                    block_masks = []
-                    for block_module in module.children():
-                        if type(module) == MaskedConv2d: # First conv layer
-                            block_masks.append(generate_masks_for_layer(module, threshold))
-                    sequential_masks.append(block_masks)
-            masks.append(sequential_masks)
-                    
+        if 'Masked' not in str(type(module)):
+            print("Skipping masking of layer: ", module)
+            continue
+        if len(list(module.children())) != 0:
+            masks.append(gen_masks_recursive(module, threshold))
+        else:
+            masks.append(gen_masks_for_layer(module, threshold))
+    
     return masks
+
 
 def weight_prune_residiual(model, pruning_perc):
     weights = get_all_weights_for_nested_model(model)
@@ -223,5 +219,6 @@ def weight_prune_residiual(model, pruning_perc):
 if __name__ == '__main__':
     model = resnet18(pretrained=True)
     threshold = weight_prune_residiual(model, 50)
-    masks = generate_masks(threshold)
+    masks = gen_masks_recursive(model, threshold)
     model.set_mask(masks)
+    prune_rate(model)
