@@ -47,4 +47,6 @@ class Classifier:
             final_loss, correct, len(self._test_loader.dataset),
             100. * correct / len(self._test_loader.dataset)))
         
+        return 100. * correct / len(self._test_loader.dataset)
+        
     

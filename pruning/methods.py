@@ -3,24 +3,49 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def get_all_weights(model):
+    weights = []
+
+    if len(list(model.children())) != 0:
+        for l in model.children():
+            weights += get_all_weights(l)
+    else:
+        for p in model.parameters():
+            if len(p.data.size()) != 1: # Avoid bias parameters
+                weights += list(p.cpu().data.abs().numpy().flatten())
+
+    return weights
+
+def gen_masks_for_layer(model, threshold):
+    # generate mask
+    for p in model.parameters():
+        if len(p.data.size()) != 1:
+            pruned_inds = p.data.abs() > threshold
+            return pruned_inds.float()
+    
+def gen_masks_recursive(model, threshold):
+    masks = []
+    
+    for module in model.children():
+        if 'Masked' not in str(type(module)):
+            print("Skipping masking of layer: ", module)
+            continue
+        if len(list(module.children())) != 0:
+            masks.append(gen_masks_recursive(module, threshold))
+        else:
+            masks.append(gen_masks_for_layer(module, threshold))
+    
+    return masks
+
+
 def weight_prune(model, pruning_perc):
     '''
     Prune pruning_perc% weights globally (not layer-wise)
     arXiv: 1606.09274
     '''    
-    all_weights = []
-    for p in model.parameters():
-        if len(p.data.size()) != 1: # Avoid bias parameters
-            all_weights += list(p.cpu().data.abs().numpy().flatten())
+    all_weights = get_all_weights(model)
     threshold = np.percentile(np.array(all_weights), pruning_perc)
-
-    # generate mask
-    masks = []
-    for p in model.parameters():
-        if len(p.data.size()) != 1:
-            pruned_inds = p.data.abs() > threshold
-            masks.append(pruned_inds.float())
-    return masks
+    return gen_masks_recursive(model, threshold)
 
 def prune_rate(model, verbose=True):
     """

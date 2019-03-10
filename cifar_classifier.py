@@ -11,7 +11,6 @@ from classifier_utils import setup_default_args
 from pruning.masked_conv_2d import MaskedConv2d
 from pruning.masked_linear import MaskedLinear
 
-
 class MaskedCifar(nn.Module):
     def __init__(self):
         super(MaskedCifar, self).__init__()
@@ -31,7 +30,7 @@ class MaskedCifar(nn.Module):
         x = self.fc3(x)
         return x
     
-    def set_masks(self, masks):
+    def set_mask(self, masks):
         self.conv1.set_mask(masks[0])
         self.conv2.set_mask(masks[1])
         self.fc1.set_mask(masks[2])
@@ -39,7 +38,7 @@ class MaskedCifar(nn.Module):
         self.fc3.set_mask(masks[4])
 
 def main():
-    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser = argparse.ArgumentParser(description='PyTorch Cifar Example')
     setup_default_args(parser)
     args = parser.parse_args()
     

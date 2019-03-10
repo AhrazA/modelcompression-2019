@@ -13,7 +13,6 @@ from classifier_utils import setup_default_args
 from pruning.masked_conv_2d import MaskedConv2d
 from pruning.masked_linear import MaskedLinear
 
-
 class MaskedMNist(nn.Module):
     def __init__(self):
         super(MaskedMNist, self).__init__()
@@ -32,7 +31,7 @@ class MaskedMNist(nn.Module):
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
-    def set_masks(self, masks):
+    def set_mask(self, masks):
         # Should be a less manual way to set masks
         # Leave it for the future
         self.conv1.set_mask(masks[0])

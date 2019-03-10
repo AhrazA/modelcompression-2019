@@ -1,35 +1,21 @@
+import argparse
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
+import torch.optim as optim
+
 from pruning.masked_conv_2d import MaskedConv2d
 from pruning.masked_linear import MaskedLinear
-from pruning.methods import prune_rate
+from pruning.methods import weight_prune, prune_rate
+from pruning.masked_sequential import MaskedSequential
+from pruning.masked_conv_2d import conv1x1, conv3x3
+from classifier_utils import setup_default_args
+from classifier import Classifier
+from torchvision import datasets, transforms
+import torch.optim as optim
+
 import numpy as np
-
-model_urls = {
-    'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
-    'resnet34': 'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
-    'resnet50': 'https://download.pytorch.org/models/resnet50-19c8e357.pth',
-    'resnet101': 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
-    'resnet152': 'https://download.pytorch.org/models/resnet152-b121ed2d.pth',
-}
-
-def conv3x3(in_planes, out_planes, stride=1):
-    """3x3 convolution with padding"""
-    return MaskedConv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, bias=False)
-
-def conv1x1(in_planes, out_planes, stride=1):
-    """1x1 convolution"""
-    return MaskedConv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
-
-class MaskedSequential(nn.Sequential):
-    # Applies masks per residual block
-    def set_mask(self, masks):
-        iter_masks = iter(masks)
-        for index, layer in enumerate(self.children()):
-            if 'Masked' in str(type(layer)):
-                layer.set_mask(next(iter_masks))
 
 class MaskedBasicBlock(nn.Module):
     expansion = 1
@@ -66,11 +52,11 @@ class MaskedBasicBlock(nn.Module):
         self.conv1.set_mask(masks[0])
         self.conv2.set_mask(masks[1])
 
-class Bottleneck(nn.Module):
+class MaskedBottleneck(nn.Module):
     expansion = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
-        super(Bottleneck, self).__init__()
+        super(MaskedBottleneck, self).__init__()
         self.conv1 = conv1x1(inplanes, planes)
         self.bn1 = nn.BatchNorm2d(planes)
         self.conv2 = conv3x3(planes, planes, stride)
@@ -136,7 +122,7 @@ class MaskedResNet(nn.Module):
         # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
         if zero_init_residual:
             for m in self.modules():
-                if isinstance(m, Bottleneck):
+                if isinstance(m, MaskedBottleneck):
                     nn.init.constant_(m.bn3.weight, 0)
                 elif isinstance(m, MaskedBasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)
@@ -165,15 +151,78 @@ class MaskedResNet(nn.Module):
         self.layer4.set_mask(masks[4])
         self.fc.set_mask(masks[5])
 
+    
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
 
-def resnet18(pretrained=False, **kwargs):
-    """Constructs a ResNet-18 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = MaskedResNet(MaskedBasicBlock, [2, 2, 2, 2], **kwargs)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+
+        return x
+
+class MaskedResNet18(MaskedResNet):
+    def __init__(self, **args):
+        super(MaskedResNet18, self).__init__(MaskedBasicBlock, [2, 2, 2, 2], **args)
+
+class MaskedResNet34(MaskedResNet):
+    def __init__(self, **args):
+        super(MaskedResNet34, self).__init__(MaskedBasicBlock, [3, 4, 6, 3], **args)
+
+class MaskedResNet50(MaskedResNet):
+    def __init__(self, **args):
+        super(MaskedResNet50, self).__init__(MaskedBottleneck, [3, 4, 6, 3], **args)
+
+class MaskedResNet101(MaskedResNet):
+    def __init__(self, **args):
+        super(MaskedResNet101, self).__init__(MaskedBottleneck, [3, 4, 23, 3], **args)
+
+class MaskedResNet152(MaskedResNet):
+    def __init__(self, **args):
+        super(MaskedResNet152, self).__init__(MaskedBottleneck, [3, 8, 36, 3], **args)
+
+configurations = {
+    'resnet18': {
+        'type': MaskedResNet18,
+        'model_url': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
+        'model_args': {}
+    },
+    'resnet34': {
+        'type': MaskedResNet34,
+        'model_url': 'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
+        'model_args': {}
+    },
+    'resnet50': {
+        'type': MaskedResNet50,
+        'model_url': 'https://download.pytorch.org/models/resnet50-19c8e357.pth',
+        'model_args': {}
+    },
+    'resnet101': {
+        'type': MaskedResNet101,
+        'model_url': 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
+        'model_args': {}
+    },
+    'resnet152': {
+        'type': MaskedResNet152,
+        'model_url': 'https://download.pytorch.org/models/resnet152-b121ed2d.pth',
+        'model_args': {}
+    }
+}
+
+def get_resnet(resnet_type_name, config, pretrained=False, **kwargs):
+    config = configurations[resnet_type_name]
+    model = config['type'](**config['model_args'], **kwargs)
+
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet18']))
+        model.load_state_dict(model_zoo.load_url(config['model_url']))
     return model
 
 def get_all_weights_for_nested_model(model):
@@ -189,35 +238,46 @@ def get_all_weights_for_nested_model(model):
 
     return weights
 
-def gen_masks_for_layer(model, threshold):
-    # generate mask
-    for p in model.parameters():
-        if len(p.data.size()) != 1:
-            pruned_inds = p.data.abs() > threshold
-            return pruned_inds.float()
-    
-def gen_masks_recursive(model, threshold):
-    masks = []
-    
-    for module in model.children():
-        if 'Masked' not in str(type(module)):
-            print("Skipping masking of layer: ", module)
-            continue
-        if len(list(module.children())) != 0:
-            masks.append(gen_masks_recursive(module, threshold))
-        else:
-            masks.append(gen_masks_for_layer(module, threshold))
-    
-    return masks
-
-def weight_prune_residiual(model, pruning_perc):
-    weights = get_all_weights_for_nested_model(model)
-    threshold = np.percentile(np.array(weights), pruning_perc)
-    masks = gen_masks_recursive(model, threshold)
+def mask_model(model, pruning_perc):
+    masks = weight_prune(model, pruning_perc)
     model.set_mask(masks)
     prune_rate(model)
     return model
 
+def main():
+    parser = argparse.ArgumentParser(description='PyTorch ResNet Example')
+    setup_default_args(parser)
+    args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    kwargs = {'num_workers': 1, 'pin_memory': True} if not args.no_cuda else {}
+
+    train_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10('./data', train=True, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                       ])),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
+
+    test_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10('./data', train=False, transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                       ])),
+        batch_size=args.test_batch_size, shuffle=True, **kwargs)
+    
+    for c in configurations:
+        model = get_resnet(c, configurations[c], pretrained=True)
+        classifier = Classifier(model, 'cuda', train_loader, test_loader)
+        optimizer = optim.SGD(classifier.model.parameters(), lr=args.lr, momentum=args.momentum)
+
+        for epoch in range(1, args.epochs + 1):
+            classifier.train(args.log_interval, optimizer, epoch, F.cross_entropy)
+            classifier.test(F.cross_entropy)
+        
+        if (args.save_model):
+            torch.save(classifier.model.state_dict(),f"models/{c}.pt")
+
 if __name__ == '__main__':
-    model = resnet18(pretrained=True)
-    model = weight_prune_residiual(model, 50.)
+    main()

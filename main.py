@@ -15,7 +15,7 @@ from classifier import Classifier
 from mnist_classifier import MaskedMNist
 from pruning.methods import weight_prune, prune_rate
 from pruning.utils import to_var
-
+from resnet import MaskedResNet18, MaskedResNet34, MaskedResNet50, MaskedResNet101, MaskedResNet152
 
 def get_list_choice(choices):
     for i, m in enumerate(choices):
@@ -61,6 +61,16 @@ def main():
                            transforms.Normalize((0.1307,), (0.3081,))
                         ],
             'loss_fn': F.nll_loss
+        },
+        {
+            'model': MaskedResNet18,
+            'dataset': datasets.CIFAR10,
+            'transforms':
+                        [
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                        ],
+            'loss_fn': F.cross_entropy
         }
     ]
 
@@ -73,12 +83,6 @@ def main():
     saved_models = os.listdir('./models/')
     file_choice = get_list_choice(saved_models)
 
-    print()
-
-    prune_perc = float(input("Select pruning percentage: (0-100)%: "))
-    if prune_perc < 0 or prune_perc > 100.0:
-        raise ValueError("Pruning percentage be a percentage value between 0 and 100.")
-
     model_file_name = saved_models[file_choice]
     chosen_configuration = configurations[model_choice]
     print("Loading file {} for model {}".format(model_file_name, chosen_configuration))
@@ -87,11 +91,33 @@ def main():
     print()
 
     print("Testing pre-pruned model..")
-    wrapped_model.test(chosen_configuration["loss_fn"])
+    pre_prune_accuracy = wrapped_model.test(chosen_configuration["loss_fn"])
 
-    print("Pruning model..")
-    masks = weight_prune(wrapped_model.model, prune_perc)
-    wrapped_model.model.set_masks(masks)
+    print()
+    print("Select a pruning method:")
+    pruning_method = get_list_choice(['Prune a specific perecentage of weights', 'Prune until manually specified change in accuracy threshold reached'])
+
+    if pruning_method == 0:
+        prune_perc = float(input("Select pruning percentage: (0-100)%: "))
+        if prune_perc < 0 or prune_perc > 100.0:
+            raise ValueError("Pruning percentage be a percentage value between 0 and 100.")
+        print("Pruning model..")
+        masks = weight_prune(wrapped_model.model, prune_perc)
+        wrapped_model.model.set_mask(masks)        
+
+    elif pruning_method == 1:
+        accuracy_thershold = float(input("Select acceptable accuracy change threshold: (0-100)%: "))
+        prune_perc = 0.
+        curr_accuracy = pre_prune_accuracy
+
+        while (pre_prune_accuracy - curr_accuracy) < accuracy_thershold:
+            prune_perc += 5.
+            masks = weight_prune(wrapped_model.model, prune_perc)
+            wrapped_model.model.set_mask(masks)
+            print(f"Testing at prune percentage {prune_perc}..")
+            curr_accuracy = wrapped_model.test(chosen_configuration["loss_fn"])
+            print(f"Accuracy achieved: {curr_accuracy}")
+            print(f"Change in accuracy: {pre_prune_accuracy - curr_accuracy}")
 
     prune_rate(wrapped_model.model)
 

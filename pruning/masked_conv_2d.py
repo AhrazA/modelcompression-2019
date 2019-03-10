@@ -29,3 +29,11 @@ class MaskedConv2d(nn.Conv2d):
             return F.conv2d(x, self.weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
         
+def conv3x3(in_planes, out_planes, stride=1):
+    """3x3 convolution with padding"""
+    return MaskedConv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+                     padding=1, bias=False)
+
+def conv1x1(in_planes, out_planes, stride=1):
+    """1x1 convolution"""
+    return MaskedConv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
