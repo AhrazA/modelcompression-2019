@@ -137,12 +137,13 @@ def main():
     quantize_k_means(wrapped_model.model)
 
     print("Evaluating pruned & quantized model...")
-    wrapped_model.test(chosen_configuration["loss_fn"])
+    quantized_accuracy = wrapped_model.test(chosen_configuration["loss_fn"])
 
     print(f"Pruned model: {chosen_configuration}")
     print(f"Pre-pruning accuracy: {pre_prune_accuracy}")
     print(f"Post-pruning accuracy: {pruned_accuracy}")
     print(f"Pruning percentage: {prune_perc}")
+    print(f"Quantized accuracy: {quantized_accuracy}")
 
 if __name__ == '__main__':
     main()

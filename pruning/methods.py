@@ -57,19 +57,10 @@ def quantize_k_means(model, bits=5):
         min_ = min(mat.data)
         max_ = max(mat.data)
         space = np.linspace(min_, max_, num=2**bits)
-
-        print(f"Clustering weights into {space.shape} clusters.")
         kmeans = KMeans(n_clusters=len(space), init=space.reshape(-1,1), n_init=1, precompute_distances=True, algorithm="full")
-        kmeans.fit(mat.data.reshape(-1,1))
-        print(kmeans.labels_.shape)
-        new_weight = kmeans.cluster_centers_[kmeans.labels_].flatten()
-        print(new_weight.shape)
-        new_weight.reshape(1,-1)
-        new_weight.reshape(-1,2)
-        new_weight.reshape(original_shape)
-        mat.data = new_weight
-        print(new_weight.shape)
-        module.weight.data = torch.from_numpy(mat.toarray()).to(dev)
+        kmeans.fit(mat.reshape(-1,1))
+        weight = kmeans.cluster_centers_[kmeans.labels_].reshape(original_shape)
+        module.weight.data = torch.from_numpy(weight).to(dev)
 
 def weight_prune(model, pruning_perc):
     '''
