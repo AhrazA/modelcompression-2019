@@ -124,7 +124,16 @@ def main():
     print()
 
     print("Evaluating pruned model..")
-    wrapped_model.test(chosen_configuration["loss_fn"])
+    pruned_accuracy = wrapped_model.test(chosen_configuration["loss_fn"])
+
+    print()
+    print()
+    print()
+
+    print(f"Pruned model: {chosen_configuration}")
+    print(f"Pre-pruning accuracy: {pre_prune_accuracy}")
+    print(f"Post-pruning accuracy: {pruned_accuracy}")
+    print(f"Pruning percentage: {prune_perc}")
 
 if __name__ == '__main__':
     main()
