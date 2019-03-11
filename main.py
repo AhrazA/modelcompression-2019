@@ -13,7 +13,7 @@ from torchvision import datasets, transforms
 from cifar_classifier import MaskedCifar
 from classifier import Classifier
 from mnist_classifier import MaskedMNist
-from pruning.methods import weight_prune, prune_rate
+from pruning.methods import weight_prune, prune_rate, quantize_k_means
 from pruning.utils import to_var
 from resnet import MaskedResNet18, MaskedResNet34, MaskedResNet50, MaskedResNet101, MaskedResNet152
 
@@ -97,6 +97,9 @@ def main():
     print("Select a pruning method:")
     pruning_method = get_list_choice(['Prune a specific perecentage of weights', 'Prune until manually specified change in accuracy threshold reached'])
 
+    print()
+    print("")
+
     if pruning_method == 0:
         prune_perc = float(input("Select pruning percentage: (0-100)%: "))
         if prune_perc < 0 or prune_perc > 100.0:
@@ -119,7 +122,7 @@ def main():
             print(f"Accuracy achieved: {curr_accuracy}")
             print(f"Change in accuracy: {pre_prune_accuracy - curr_accuracy}")
 
-    prune_rate(wrapped_model.model)
+    prune_perc = prune_rate(wrapped_model.model)
 
     print()
 
@@ -129,6 +132,12 @@ def main():
     print()
     print()
     print()
+
+    print("Quantizing model..")
+    quantize_k_means(wrapped_model.model)
+
+    print("Evaluating pruned & quantized model...")
+    wrapped_model.test(chosen_configuration["loss_fn"])
 
     print(f"Pruned model: {chosen_configuration}")
     print(f"Pre-pruning accuracy: {pre_prune_accuracy}")

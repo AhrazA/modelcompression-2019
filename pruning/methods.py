@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.cluster import KMeans
+from scipy.sparse import csc_matrix, csr_matrix
 
 def get_all_weights(model):
     weights = []
@@ -37,6 +39,37 @@ def gen_masks_recursive(model, threshold):
     
     return masks
 
+def quantize_k_means(model, bits=5):
+    for module in model.children():
+        if 'weight' not in dir(module):
+            continue
+
+        dev = module.weight.device
+        weight = module.weight.data.cpu().numpy()
+        original_shape = weight.shape
+
+        if 'Masked' in str(type(module)):
+            mask = module.mask.data.cpu().numpy()
+            weight = mask * weight
+        
+        weight = np.reshape(weight, (2, -1))
+        mat = csr_matrix(weight)
+        min_ = min(mat.data)
+        max_ = max(mat.data)
+        space = np.linspace(min_, max_, num=2**bits)
+
+        print(f"Clustering weights into {space.shape} clusters.")
+        kmeans = KMeans(n_clusters=len(space), init=space.reshape(-1,1), n_init=1, precompute_distances=True, algorithm="full")
+        kmeans.fit(mat.data.reshape(-1,1))
+        print(kmeans.labels_.shape)
+        new_weight = kmeans.cluster_centers_[kmeans.labels_].flatten()
+        print(new_weight.shape)
+        new_weight.reshape(1,-1)
+        new_weight.reshape(-1,2)
+        new_weight.reshape(original_shape)
+        mat.data = new_weight
+        print(new_weight.shape)
+        module.weight.data = torch.from_numpy(mat.toarray()).to(dev)
 
 def weight_prune(model, pruning_perc):
     '''
