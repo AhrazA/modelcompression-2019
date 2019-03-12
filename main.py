@@ -3,6 +3,7 @@ from __future__ import print_function
 import argparse
 import json
 import os
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -13,9 +14,11 @@ from torchvision import datasets, transforms
 from cifar_classifier import MaskedCifar
 from classifier import Classifier
 from mnist_classifier import MaskedMNist
-from pruning.methods import weight_prune, prune_rate
+from pruning.methods import weight_prune, prune_rate, get_all_weights
 from pruning.utils import to_var
 from resnet import MaskedResNet18, MaskedResNet34, MaskedResNet50, MaskedResNet101, MaskedResNet152
+
+from tensorboardX import SummaryWriter
 
 def get_list_choice(choices):
     for i, m in enumerate(choices):
@@ -32,13 +35,18 @@ def load_model(model_file_name, configuration):
     model = configuration['model']()
     model.load_state_dict(torch.load('./models/' + model_file_name))
 
+    train_data = test_data = configuration['dataset'](
+        './data', train=True, download=True, transform=transforms.Compose(configuration['transforms'])
+    )
+
     test_data = configuration['dataset'](
         './data', train=False, download=True, transform=transforms.Compose(configuration['transforms'])
     )
 
+    train_loder = torch.utils.data.DataLoader(train_data, batch_size=1000, shuffle=True, num_workers=1, pin_memory=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=1000, shuffle=True, num_workers=1, pin_memory=True)
 
-    return Classifier(model, 'cuda', None, test_loader)
+    return Classifier(model, 'cuda', train_loder, test_loader)
 
 def main():
     configurations = [
@@ -74,10 +82,10 @@ def main():
         }
     ]
 
+    writer = SummaryWriter()
+
     print("Select a model type to prune. Models available:")
     model_choice = get_list_choice(configurations)
-
-    print()
 
     print("Select a model params file to load by index. Models available:")
     saved_models = os.listdir('./models/')
@@ -97,13 +105,21 @@ def main():
     print("Select a pruning method:")
     pruning_method = get_list_choice(['Prune a specific perecentage of weights', 'Prune until manually specified change in accuracy threshold reached'])
 
+    prune_iter = 0
+    writer.add_scalar('prune/accuracy', pre_prune_accuracy, prune_iter)
+    writer.add_scalar('prune/percentage', 0, prune_iter)
+
+    for name, param in wrapped_model.model.named_parameters():
+        if 'bn' not in name:
+            writer.add_histogram(f'prune/preprune/{name}', param, prune_iter)
+
     if pruning_method == 0:
         prune_perc = float(input("Select pruning percentage: (0-100)%: "))
         if prune_perc < 0 or prune_perc > 100.0:
             raise ValueError("Pruning percentage be a percentage value between 0 and 100.")
         print("Pruning model..")
         masks = weight_prune(wrapped_model.model, prune_perc)
-        wrapped_model.model.set_mask(masks)        
+        wrapped_model.model.set_mask(masks)
 
     elif pruning_method == 1:
         accuracy_thershold = float(input("Select acceptable accuracy change threshold: (0-100)%: "))
@@ -111,11 +127,16 @@ def main():
         curr_accuracy = pre_prune_accuracy
 
         while (pre_prune_accuracy - curr_accuracy) < accuracy_thershold:
+            prune_iter += 1
             prune_perc += 5.
             masks = weight_prune(wrapped_model.model, prune_perc)
             wrapped_model.model.set_mask(masks)
+
             print(f"Testing at prune percentage {prune_perc}..")
             curr_accuracy = wrapped_model.test(chosen_configuration["loss_fn"])
+
+            writer.add_scalar('prune/accuracy', curr_accuracy, prune_iter)
+            writer.add_scalar('prune/percentage', prune_perc, prune_iter)
             print(f"Accuracy achieved: {curr_accuracy}")
             print(f"Change in accuracy: {pre_prune_accuracy - curr_accuracy}")
 
@@ -124,7 +145,15 @@ def main():
     print()
 
     print("Evaluating pruned model..")
+
     pruned_accuracy = wrapped_model.test(chosen_configuration["loss_fn"])
+    
+    writer.add_scalar('prune/accuracy', pruned_accuracy, prune_iter + 1)
+    writer.add_scalar('prune/percentage', prune_perc, prune_iter + 1)
+
+    for name, param in wrapped_model.model.named_parameters():
+        if 'bn' not in name:
+            writer.add_histogram(f'prune/postprune/{name}', param, prune_iter + 1)
 
     print()
     print()
