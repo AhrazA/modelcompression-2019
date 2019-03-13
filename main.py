@@ -14,7 +14,7 @@ from torchvision import datasets, transforms
 from cifar_classifier import MaskedCifar
 from classifier import Classifier
 from mnist_classifier import MaskedMNist
-from pruning.methods import weight_prune, prune_rate, get_all_weights
+from pruning.methods import weight_prune, prune_rate, get_all_weights, quantize_k_means
 from pruning.utils import to_var
 from resnet import MaskedResNet18, MaskedResNet34, MaskedResNet50, MaskedResNet101, MaskedResNet152
 
@@ -140,7 +140,7 @@ def main():
             print(f"Accuracy achieved: {curr_accuracy}")
             print(f"Change in accuracy: {pre_prune_accuracy - curr_accuracy}")
 
-    prune_rate(wrapped_model.model)
+    prune_perc = prune_rate(wrapped_model.model)
 
     print()
 
@@ -159,10 +159,17 @@ def main():
     print()
     print()
 
+    print("Quantizing model..")
+    quantize_k_means(wrapped_model.model)
+
+    print("Evaluating pruned & quantized model...")
+    quantized_accuracy = wrapped_model.test(chosen_configuration["loss_fn"])
+
     print(f"Pruned model: {chosen_configuration}")
     print(f"Pre-pruning accuracy: {pre_prune_accuracy}")
     print(f"Post-pruning accuracy: {pruned_accuracy}")
     print(f"Pruning percentage: {prune_perc}")
+    print(f"Quantized accuracy: {quantized_accuracy}")
 
 if __name__ == '__main__':
     main()
