@@ -10,7 +10,7 @@ from classifier import Classifier
 from classifier_utils import setup_default_args, parse_model_cfg
 from pruning.masked_conv_2d import MaskedConv2d
 from pruning.masked_linear import MaskedLinear
-from pruing.masked_sequential import MaskedSequential
+from pruning.masked_sequential import MaskedSequential
 
 def create_modules(module_defs):
     """
@@ -346,7 +346,9 @@ def save_weights(self, path, cutoff=-1):
     fp.close()
 
 if __name__ == '__main__':
-    modules = create_modules(parse_model_cfg('./yolo.cfg'))
+    model = Darknet('./yolo.cfg')
+    model.load_state_dict(torch.load('./models/yolov3.pt')['model'])
+    # 'wget https://storage.googleapis.com/ultralytics/yolov3.pt -O '
 
 # conv_1 = MaskedConv2d(out_chanels=32, kernel_size=3, stride=1, padding=1)
 # conv_1_activation = nn.LeakyReLU(0.1)
