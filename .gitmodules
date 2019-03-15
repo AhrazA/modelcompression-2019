@@ -1,0 +1,3 @@
+[submodule "repos/yolov3"]
+	path = repos/yolov3
+	url = git@github.com:ultralytics/yolov3.git
