@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torchvision import datasets, transforms
 
 from classifier import Classifier
 from classifier_utils import setup_default_args, parse_model_cfg
