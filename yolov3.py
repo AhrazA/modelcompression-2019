@@ -4,15 +4,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import json
+import time
+from pathlib import Path
 
 import numpy as np
 
 from classifier import Classifier
+from collections import defaultdict
 from classifier_utils import setup_default_args, parse_model_cfg
 from pruning.masked_conv_2d import MaskedConv2d
 from pruning.masked_linear import MaskedLinear
 from pruning.masked_sequential import MaskedSequential
 from pruning.methods import weight_prune, prune_rate
+
+from repos.yolov3.utils.datasets import LoadImagesAndLabels
 
 class MaskedModuleList(nn.ModuleList):
     def __init__(self):
@@ -357,13 +363,147 @@ def save_weights(self, path, cutoff=-1):
 
     fp.close()
 
+def xyxy2xywh(x):
+    # Convert bounding box format from [x1, y1, x2, y2] to [x, y, w, h]
+    y = torch.zeros(x.shape) if x.dtype is torch.float32 else np.zeros(x.shape)
+    y[:, 0] = (x[:, 0] + x[:, 2]) / 2
+    y[:, 1] = (x[:, 1] + x[:, 3]) / 2
+    y[:, 2] = x[:, 2] - x[:, 0]
+    y[:, 3] = x[:, 3] - x[:, 1]
+    return y
+
+
+def xywh2xyxy(x):
+    # Convert bounding box format from [x, y, w, h] to [x1, y1, x2, y2]
+    y = torch.zeros(x.shape) if x.dtype is torch.float32 else np.zeros(x.shape)
+    y[:, 0] = (x[:, 0] - x[:, 2] / 2)
+    y[:, 1] = (x[:, 1] - x[:, 3] / 2)
+    y[:, 2] = (x[:, 0] + x[:, 2] / 2)
+    y[:, 3] = (x[:, 1] + x[:, 3] / 2)
+    return y
+
+class YOLOTest():
+    def __init__(self, device, model):
+        self.device = device
+        self.model = model
+        self.dataloader = LoadImagesAndLabels('./data/yolo/5k.txt', batch_size=16, img_size=416)
+    
+    def test(self, batch_size=16, img_size=416, iou_thres=0.5, conf_thres=0.3, nms_thres=0.45):
+        nC = 80
+
+        mean_mAP, mean_R, mean_P, seen = 0.0, 0.0, 0.0, 0
+        print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP'))
+        outputs, mAPs, mR, mP, TP, confidence, pred_class, target_class, jdict = \
+            [], [], [], [], [], [], [], [], []
+        AP_accum, AP_accum_count = np.zeros(nC), np.zeros(nC)
+        coco91class = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 31, 32, 33, 34,
+         35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+         64, 65, 67, 70, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90]
+        for batch_i, (imgs, targets, paths, shapes) in enumerate(self.dataloader):
+            t = time.time()
+            output = model(imgs.to(self.device))
+            output = non_max_suppression(output, conf_thres=conf_thres, nms_thres=nms_thres)
+
+            # Compute average precision for each sample
+            for si, (labels, detections) in enumerate(zip(targets, output)):
+                seen += 1
+
+                if detections is None:
+                    # If there are labels but no detections mark as zero AP
+                    if labels.size(0) != 0:
+                        mAPs.append(0), mR.append(0), mP.append(0)
+                    continue
+
+                # Get detections sorted by decreasing confidence scores
+                detections = detections.cpu().numpy()
+                detections = detections[np.argsort(-detections[:, 4])]
+
+                if save_json:
+                    # [{"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}, ...
+                    box = torch.from_numpy(detections[:, :4]).clone()  # xyxy
+                    scale_coords(img_size, box, shapes[si])  # to original shape
+                    box = xyxy2xywh(box)  # xywh
+                    box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
+
+                    # add to json dictionary
+                    for di, d in enumerate(detections):
+                        jdict.append({
+                            'image_id': int(Path(paths[si]).stem.split('_')[-1]),
+                            'category_id': coco91class[int(d[6])],
+                            'bbox': [float3(x) for x in box[di]],
+                            'score': float3(d[4] * d[5])
+                        })
+
+                # If no labels add number of detections as incorrect
+                correct = []
+                if labels.size(0) == 0:
+                    # correct.extend([0 for _ in range(len(detections))])
+                    mAPs.append(0), mR.append(0), mP.append(0)
+                    continue
+                else:
+                    target_cls = labels[:, 0]
+
+                    # Extract target boxes as (x1, y1, x2, y2)
+                    target_boxes = xywh2xyxy(labels[:, 1:5]) * img_size
+
+                    detected = []
+                    for *pred_bbox, conf, obj_conf, obj_pred in detections:
+
+                        pred_bbox = torch.FloatTensor(pred_bbox).view(1, -1)
+                        # Compute iou with target boxes
+                        iou = bbox_iou(pred_bbox, target_boxes)
+                        # Extract index of largest overlap
+                        best_i = np.argmax(iou)
+                        # If overlap exceeds threshold and classification is correct mark as correct
+                        if iou[best_i] > iou_thres and obj_pred == labels[best_i, 0] and best_i not in detected:
+                            correct.append(1)
+                            detected.append(best_i)
+                        else:
+                            correct.append(0)
+
+                # Compute Average Precision (AP) per class
+                AP, AP_class, R, P = ap_per_class(tp=correct,
+                                                conf=detections[:, 4],
+                                                pred_cls=detections[:, 6],
+                                                target_cls=target_cls)
+
+                # Accumulate AP per class
+                AP_accum_count += np.bincount(AP_class, minlength=nC)
+                AP_accum += np.bincount(AP_class, minlength=nC, weights=AP)
+
+                # Compute mean AP across all classes in this image, and append to image list
+                mAPs.append(AP.mean())
+                mR.append(R.mean())
+                mP.append(P.mean())
+
+                # Means of all images
+                mean_mAP = np.mean(mAPs)
+                mean_R = np.mean(mR)
+                mean_P = np.mean(mP)
+
+            # Print image mAP and running mean mAP
+            print(('%11s%11s' + '%11.3g' * 4 + 's') %
+                (seen, self.dataloader.nF, mean_P, mean_R, mean_mAP, time.time() - t))
+
+        # Print mAP per class
+        print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP') + '\n\nmAP Per Class:')
+
+        for i, c in enumerate(load_classes(data_cfg_dict['names'])):
+            print('%15s: %-.4f' % (c, AP_accum[i] / (AP_accum_count[i] + 1E-16)))
+
+        # Return mAP
+        return mean_mAP, mean_R, mean_P
+
 if __name__ == '__main__':
     model = MaskedDarknet('./yolo.cfg')
     model.to('cuda:0')
     model.load_state_dict(torch.load('./models/yolov3.pt')['model'])
-    masks = weight_prune(model, 1.)
+    masks = weight_prune(model, 80.)
     model.set_mask(masks)
     prune_rate(model)
+
+    yolotester = YOLOTest('cuda:0', model)
+    yolotester.test()
 
 
 # conv_1 = MaskedConv2d(out_chanels=32, kernel_size=3, stride=1, padding=1)
