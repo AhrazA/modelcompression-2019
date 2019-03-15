@@ -5,11 +5,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+import numpy as np
+
 from classifier import Classifier
 from classifier_utils import setup_default_args, parse_model_cfg
 from pruning.masked_conv_2d import MaskedConv2d
 from pruning.masked_linear import MaskedLinear
 from pruning.masked_sequential import MaskedSequential
+from pruning.methods import weight_prune, prune_rate
+
+class MaskedModuleList(nn.ModuleList):
+    def __init__(self):
+        super(MaskedModuleList, self).__init__()
+    
+    def set_mask(self, masks):
+        for module, mask in zip(self.children(), masks[0]):
+            module.set_mask(mask)
 
 def create_modules(module_defs):
     """
@@ -17,7 +28,7 @@ def create_modules(module_defs):
     """
     hyperparams = module_defs.pop(0)
     output_filters = [int(hyperparams['channels'])]
-    module_list = nn.ModuleList()
+    module_list = MaskedModuleList()
     yolo_layer_count = 0
     for i, module_def in enumerate(module_defs):
         modules = MaskedSequential()
@@ -180,11 +191,11 @@ class YOLOLayer(nn.Module):
             return p.view(bs, -1, 5 + self.nC)
 
 
-class Darknet(nn.Module):
+class MaskedDarknet(nn.Module):
     """YOLOv3 object detection model"""
 
     def __init__(self, cfg_path, img_size=416):
-        super(Darknet, self).__init__()
+        super(MaskedDarknet, self).__init__()
 
         self.module_defs = parse_model_cfg(cfg_path)
         self.module_defs[0]['cfg'] = cfg_path
@@ -228,7 +239,9 @@ class Darknet(nn.Module):
             self.losses['nT'] /= 3
 
         return sum(output) if is_training else torch.cat(output, 1)
-
+    
+    def set_mask(self, mask):
+        self.module_list.set_mask(mask)
 
 def get_yolo_layers(model):
     a = [module_def['type'] == 'yolo' for module_def in model.module_defs]
@@ -345,9 +358,13 @@ def save_weights(self, path, cutoff=-1):
     fp.close()
 
 if __name__ == '__main__':
-    model = Darknet('./yolo.cfg')
+    model = MaskedDarknet('./yolo.cfg')
+    model.to('cuda:0')
     model.load_state_dict(torch.load('./models/yolov3.pt')['model'])
-    # 'wget https://storage.googleapis.com/ultralytics/yolov3.pt -O '
+    masks = weight_prune(model, 1.)
+    model.set_mask(masks)
+    prune_rate(model)
+
 
 # conv_1 = MaskedConv2d(out_chanels=32, kernel_size=3, stride=1, padding=1)
 # conv_1_activation = nn.LeakyReLU(0.1)
