@@ -1,5 +1,6 @@
 import argparse
 
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,6 +28,94 @@ class MaskedModuleList(nn.ModuleList):
     def set_mask(self, masks):
         for module, mask in zip(self.children(), masks[0]):
             module.set_mask(mask)
+
+
+def return_torch_unique_index(u, uv):
+    n = uv.shape[1]  # number of columns
+    first_unique = torch.zeros(n, device=u.device).long()
+    for j in range(n):
+        first_unique[j] = (uv[:, j:j + 1] == u).all(0).nonzero()[0]
+
+    return first_unique
+
+def build_targets(target, anchor_vec, nA, nC, nG):
+    """
+    returns nT, nCorrect, tx, ty, tw, th, tconf, tcls
+    """
+    nB = len(target)  # number of images in batch
+
+    txy = torch.zeros(nB, nA, nG, nG, 2)  # batch size, anchors, grid size
+    twh = torch.zeros(nB, nA, nG, nG, 2)
+    tconf = torch.ByteTensor(nB, nA, nG, nG).fill_(0)
+    tcls = torch.ByteTensor(nB, nA, nG, nG, nC).fill_(0)  # nC = number of classes
+
+    for b in range(nB):
+        t = target[b]
+        nTb = len(t)  # number of targets
+        if nTb == 0:
+            continue
+
+        gxy, gwh = t[:, 1:3] * nG, t[:, 3:5] * nG
+
+        # Get grid box indices and prevent overflows (i.e. 13.01 on 13 anchors)
+        gi, gj = torch.clamp(gxy.long(), min=0, max=nG - 1).t()
+
+        # iou of targets-anchors (using wh only)
+        box1 = gwh
+        box2 = anchor_vec.unsqueeze(1)
+
+        inter_area = torch.min(box1, box2).prod(2)
+        iou = inter_area / (box1.prod(1) + box2.prod(2) - inter_area + 1e-16)
+
+        # Select best iou_pred and anchor
+        iou_best, a = iou.max(0)  # best anchor [0-2] for each target
+
+        # Select best unique target-anchor combinations
+        if nTb > 1:
+            iou_order = torch.argsort(-iou_best)  # best to worst
+
+            # Unique anchor selection
+            u = torch.stack((gi, gj, a), 0)[:, iou_order]
+            # _, first_unique = np.unique(u, axis=1, return_index=True)  # first unique indices
+            first_unique = return_torch_unique_index(u, torch.unique(u, dim=1))  # torch alternative
+
+            i = iou_order[first_unique]
+            # best anchor must share significant commonality (iou) with target
+            i = i[iou_best[i] > 0.10]  # TODO: examine arbitrary threshold
+            if len(i) == 0:
+                continue
+
+            a, gj, gi, t = a[i], gj[i], gi[i], t[i]
+            if len(t.shape) == 1:
+                t = t.view(1, 5)
+        else:
+            if iou_best < 0.10:
+                continue
+
+        tc, gxy, gwh = t[:, 0].long(), t[:, 1:3] * nG, t[:, 3:5] * nG
+
+        # XY coordinates
+        txy[b, a, gj, gi] = gxy - gxy.floor()
+
+        # Width and height
+        twh[b, a, gj, gi] = torch.log(gwh / anchor_vec[a])  # yolo method
+        # twh[b, a, gj, gi] = torch.sqrt(gwh / anchor_vec[a]) / 2 # power method
+
+        # One-hot encoding of label
+        tcls[b, a, gj, gi, tc] = 1
+        tconf[b, a, gj, gi] = 1
+
+    return txy, twh, tconf, tcls
+
+
+
+def load_classes(path):
+    """
+    Loads class labels at 'path'
+    """
+    fp = open(path, 'r')
+    names = fp.read().split('\n')
+    return list(filter(None, names))  # filter removes empty strings (such as last line)
 
 def create_modules(module_defs):
     """
@@ -120,7 +209,7 @@ class Upsample(nn.Module):
 
 
 class YOLOLayer(nn.Module):
-    def __init__(self, anchors, nC, img_size, yolo_layer, cfg):
+    def __init__(self, anchors, nC, img_size, yolo_layer, cfg, device='cuda:1'):
         super(YOLOLayer, self).__init__()
 
         nA = len(anchors)
@@ -128,6 +217,7 @@ class YOLOLayer(nn.Module):
         self.nA = nA  # number of anchors (3)
         self.nC = nC  # number of classes (80)
         self.img_size = 0
+        self.device = device
         # self.coco_class_weights = coco_class_weights()
 
 
@@ -138,8 +228,8 @@ class YOLOLayer(nn.Module):
             create_grids(self, img_size, nG)
 
             if p.is_cuda:
-                self.grid_xy = self.grid_xy.cuda()
-                self.anchor_wh = self.anchor_wh.cuda()
+                self.grid_xy = self.grid_xy.cuda(self.device)
+                self.anchor_wh = self.anchor_wh.cuda(self.device)
 
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 80)  # (bs, anchors, grid, grid, classes + xywh)
         p = p.view(bs, self.nA, self.nC + 5, nG, nG).permute(0, 1, 3, 4, 2).contiguous()  # prediction
@@ -163,7 +253,7 @@ class YOLOLayer(nn.Module):
 
             tcls = tcls[mask]
             if p.is_cuda:
-                txy, twh, mask, tcls = txy.cuda(), twh.cuda(), mask.cuda(), tcls.cuda()
+                txy, twh, mask, tcls = txy.cuda(self.device), twh.cuda(self.device), mask.cuda(self.device), tcls.cuda(self.device)
 
             # Compute losses
             nT = sum([len(x) for x in targets])  # number of targets
@@ -176,8 +266,8 @@ class YOLOLayer(nn.Module):
                 lcls = (k / 4) * CrossEntropyLoss(p_cls[mask], torch.argmax(tcls, 1))
                 # lcls = (k * 10) * BCEWithLogitsLoss(p_cls[mask], tcls.float())
             else:
-                FT = torch.cuda.FloatTensor if p.is_cuda else torch.FloatTensor
-                lxy, lwh, lcls, lconf = FT([0]), FT([0]), FT([0]), FT([0])
+                FT = torch.cuda.FloatTensor
+                lxy, lwh, lcls, lconf = FT([0]).cuda(self.device), FT([0]).cuda(self.device), FT([0]).cuda(self.device), FT([0]).cuda(self.device)
 
             lconf = (k * 64) * BCEWithLogitsLoss(p_conf, mask.float())
 
@@ -621,9 +711,104 @@ class YOLOTest():
     def __init__(self, device, model):
         self.device = device
         self.model = model
-        self.dataloader = LoadImagesAndLabels('./data/yolo/5k.txt', batch_size=2, img_size=416)
+        self.dataloader = LoadImagesAndLabels('/home/mlt/BayesThesis/masters-thesis-2019/yolodata/coco/5k.txt', batch_size=16, img_size=416)
     
-    def test(self, batch_size=2, img_size=416, iou_thres=0.5, conf_thres=0.3, nms_thres=0.45):
+    def train(self, epochs, optimizer, lr0, var=0, accumulated_batches=1):
+        # Start training
+        t0 = time.time()
+        n_burnin = min(round(self.dataloader.nB / 5 + 1), 1000)  # number of burn-in batches
+        start_epoch = 0
+        best_loss = float('inf')
+
+        for epoch in range(epochs):
+            epoch += start_epoch
+
+            print(('%8s%12s' + '%10s' * 7) % (
+                'Epoch', 'Batch', 'xy', 'wh', 'conf', 'cls', 'total', 'nTargets', 'time'))
+
+            # Update scheduler (automatic)
+            # scheduler.step()
+
+            # Update scheduler (manual)  at 0, 54, 61 epochs to 1e-3, 1e-4, 1e-5
+            if epoch > 50:
+                lr = lr0 / 10
+            else:
+                lr = lr0
+            for g in optimizer.param_groups:
+                g['lr'] = lr
+
+            ui = -1
+            rloss = defaultdict(float)  # running loss
+            optimizer.zero_grad()
+            for i, (imgs, targets, _, _) in enumerate(self.dataloader):
+                if sum([len(x) for x in targets]) < 1:  # if no targets continue
+                    continue
+
+                # SGD burn-in
+                if (epoch == 0) & (i <= n_burnin):
+                    lr = lr0 * (i / n_burnin) ** 4
+                    for g in optimizer.param_groups:
+                        g['lr'] = lr
+
+                # Compute loss
+                loss = self.model(imgs.to(self.device), targets, var=var)
+
+                # Compute gradient
+                loss.backward()
+
+                # Accumulate gradient for x batches before optimizing
+                if ((i + 1) % accumulated_batches == 0) or (i == len(self.dataloader) - 1):
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+                # Running epoch-means of tracked metrics
+                ui += 1
+                for key, val in self.model.losses.items():
+                    rloss[key] = (rloss[key] * ui + val) / (ui + 1)
+
+                s = ('%8s%12s' + '%10.3g' * 7) % (
+                    '%g/%g' % (epoch, epochs - 1),
+                    '%g/%g' % (i, len(self.dataloader) - 1),
+                    rloss['xy'], rloss['wh'], rloss['conf'],
+                    rloss['cls'], rloss['loss'],
+                    self.model.losses['nT'], time.time() - t0)
+                t0 = time.time()
+                print(s)
+
+            # Update best loss
+            if rloss['loss'] < best_loss:
+                best_loss = rloss['loss']
+
+            # Save latest checkpoint
+            checkpoint = {'epoch': epoch,
+                        'best_loss': best_loss,
+                        'model': self.model.state_dict(),
+                        'optimizer': optimizer.state_dict()}
+
+            weights = 'models' + os.sep
+            latest = weights + 'latest.pt'
+            best = weights + 'best.pt'
+            torch.save(checkpoint, latest)
+
+            # Save best checkpoint
+            if best_loss == rloss['loss']:
+                os.system('cp ' + latest + ' ' + best)
+
+            # Save backup weights every 5 epochs (optional)
+            # if (epoch > 0) & (epoch % 5 == 0):
+            #     os.system('cp ' + latest + ' ' + weights + 'backup{}.pt'.format(epoch)))
+
+            # Calculate mAP
+            with torch.no_grad():
+                mAP, R, P = self.test()
+
+            # Write epoch results
+            with open('results.txt', 'a') as file:
+                file.write(s + '%11.3g' * 3 % (mAP, P, R) + '\n')
+        
+        return mAP
+
+    def test(self, batch_size=16, img_size=416, iou_thres=0.5, conf_thres=0.3, nms_thres=0.45):
         nC = 80
 
         mean_mAP, mean_R, mean_P, seen = 0.0, 0.0, 0.0, 0
@@ -631,9 +816,6 @@ class YOLOTest():
         outputs, mAPs, mR, mP, TP, confidence, pred_class, target_class, jdict = \
             [], [], [], [], [], [], [], [], []
         AP_accum, AP_accum_count = np.zeros(nC), np.zeros(nC)
-        coco91class = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 31, 32, 33, 34,
-         35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
-         64, 65, 67, 70, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90]
         for batch_i, (imgs, targets, paths, shapes) in enumerate(self.dataloader):
             t = time.time()
             output = model(imgs.to(self.device))
@@ -645,7 +827,6 @@ class YOLOTest():
                 if detections is None:
                     # If there are labels but no detections mark as zero AP
                     if labels.size(0) != 0:
-                        print("we here")
                         mAPs.append(0), mR.append(0), mP.append(0)
                     continue
 
@@ -705,10 +886,7 @@ class YOLOTest():
                 (seen, self.dataloader.nF, mean_P, mean_R, mean_mAP, time.time() - t))
 
         # Print mAP per class
-        print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP') + '\n\nmAP Per Class:')
-
-        for i, c in enumerate(load_classes(data_cfg_dict['names'])):
-            print('%15s: %-.4f' % (c, AP_accum[i] / (AP_accum_count[i] + 1E-16)))
+        print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP'))
 
         # Return mAP
         return mean_mAP, mean_R, mean_P
@@ -716,18 +894,43 @@ class YOLOTest():
 if __name__ == '__main__':
     print("Loading model..")
     model = MaskedDarknet('./yolo.cfg')
-    model.to('cuda:0')
-    model.load_state_dict(torch.load('./models/yolov3.pt')['model'])
+    model.to('cuda:1')
+    model.load_state_dict(torch.load('./models/yolov3.pt')["model"])
     print("Pruning model..")
-    # masks = weight_prune(model, 80.)
-    # model.set_mask(masks)
-    # prune_rate(model)
+
+    acc_threshold = .005
+    prune_perc = 0.
+    curr_acc = start_acc = -500
+    yolotester = YOLOTest('cuda:1', model)
 
     with torch.no_grad():
-        print("Testing model..")
-        yolotester = YOLOTest('cuda:0', model)
-        yolotester.test()
+        mAP, _, _ = yolotester.test()
+        curr_acc = mAP
+        start_acc = mAP
+    
+    while (start_acc - curr_acc) < acc_threshold:
+        prune_perc += 5.
 
+        masks = weight_prune(model, prune_perc)
+        for m in masks:
+            for i in m:
+                for j in i:
+                    j.to('cuda:1')
+                    print(j)
+        
+        model.set_mask(masks)
+        prune_rate(model)
+        lr0 = 0.001
+
+        optimizer = torch.optim.SGD(filter(lambda x: x.requires_grad, model.parameters()), lr=lr0, momentum=.9)
+        yolotester.train(3, optimizer, lr0)
+
+        with torch.no_grad():
+            print("Testing model..")
+            curr_acc, _, _ = yolotester.test()
+            print("Curr acc: ", curr_acc)
+            print("Start acc: ", start_acc)
+            print("Acc diff:", start_acc - curr_acc)
 
 # conv_1 = MaskedConv2d(out_chanels=32, kernel_size=3, stride=1, padding=1)
 # conv_1_activation = nn.LeakyReLU(0.1)
