@@ -382,13 +382,248 @@ def xywh2xyxy(x):
     y[:, 3] = (x[:, 1] + x[:, 3] / 2)
     return y
 
+def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
+    """
+    Removes detections with lower object confidence score than 'conf_thres'
+    Non-Maximum Suppression to further filter detections.
+    Returns detections with shape:
+        (x1, y1, x2, y2, object_conf, class_score, class_pred)
+    """
+
+    output = [None for _ in range(len(prediction))]
+    for image_i, pred in enumerate(prediction):
+        # Filter out confidence scores below threshold
+        # Get score and class with highest confidence
+
+        # cross-class NMS (experimental)
+        cross_class_nms = False
+        if cross_class_nms:
+            a = pred.clone()
+            _, indices = torch.sort(-a[:, 4], 0)  # sort best to worst
+            a = a[indices]
+            radius = 30  # area to search for cross-class ious
+            for i in range(len(a)):
+                if i >= len(a) - 1:
+                    break
+
+                close = (torch.abs(a[i, 0] - a[i + 1:, 0]) < radius) & (torch.abs(a[i, 1] - a[i + 1:, 1]) < radius)
+                close = close.nonzero()
+
+                if len(close) > 0:
+                    close = close + i + 1
+                    iou = bbox_iou(a[i:i + 1, :4], a[close.squeeze(), :4].reshape(-1, 4), x1y1x2y2=False)
+                    bad = close[iou > nms_thres]
+
+                    if len(bad) > 0:
+                        mask = torch.ones(len(a)).type(torch.ByteTensor)
+                        mask[bad] = 0
+                        a = a[mask]
+            pred = a
+
+        # Experiment: Prior class size rejection
+        # x, y, w, h = pred[:, 0], pred[:, 1], pred[:, 2], pred[:, 3]
+        # a = w * h  # area
+        # ar = w / (h + 1e-16)  # aspect ratio
+        # n = len(w)
+        # log_w, log_h, log_a, log_ar = torch.log(w), torch.log(h), torch.log(a), torch.log(ar)
+        # shape_likelihood = np.zeros((n, 60), dtype=np.float32)
+        # x = np.concatenate((log_w.reshape(-1, 1), log_h.reshape(-1, 1)), 1)
+        # from scipy.stats import multivariate_normal
+        # for c in range(60):
+        # shape_likelihood[:, c] =
+        #   multivariate_normal.pdf(x, mean=mat['class_mu'][c, :2], cov=mat['class_cov'][c, :2, :2])
+
+        class_prob, class_pred = torch.max(F.softmax(pred[:, 5:], 1), 1)
+
+        # v = ((pred[:, 4] > conf_thres) & (class_prob > .4))  # TODO examine arbitrary 0.4 thres here
+        v = pred[:, 4] > conf_thres
+        v = v.nonzero().squeeze()
+        if len(v.shape) == 0:
+            v = v.unsqueeze(0)
+
+        pred = pred[v]
+        class_prob = class_prob[v]
+        class_pred = class_pred[v]
+
+        # If none are remaining => process next image
+        nP = pred.shape[0]
+        if not nP:
+            continue
+
+        # From (center x, center y, width, height) to (x1, y1, x2, y2)
+        pred[:, :4] = xywh2xyxy(pred[:, :4])
+
+        # Detections ordered as (x1, y1, x2, y2, obj_conf, class_prob, class_pred)
+        detections = torch.cat((pred[:, :5], class_prob.float().unsqueeze(1), class_pred.float().unsqueeze(1)), 1)
+        # Iterate through all predicted classes
+        unique_labels = detections[:, -1].cpu().unique()
+        if prediction.is_cuda:
+            unique_labels = unique_labels.cuda(prediction.device)
+
+        nms_style = 'OR'  # 'OR' (default), 'AND', 'MERGE' (experimental)
+        for c in unique_labels:
+            # Get the detections with class c
+            dc = detections[detections[:, -1] == c]
+            # Sort the detections by maximum object confidence
+            _, conf_sort_index = torch.sort(dc[:, 4] * dc[:, 5], descending=True)
+            dc = dc[conf_sort_index]
+
+            # Non-maximum suppression
+            det_max = []
+            if nms_style == 'OR':  # default
+                while dc.shape[0]:
+                    det_max.append(dc[:1])  # save highest conf detection
+                    if len(dc) == 1:  # Stop if we're at the last detection
+                        break
+                    iou = bbox_iou(det_max[-1], dc[1:])  # iou with other boxes
+                    dc = dc[1:][iou < nms_thres]  # remove ious > threshold
+
+                # Image      Total          P          R        mAP
+                #  4964       5000      0.629      0.594      0.586
+
+            elif nms_style == 'AND':  # requires overlap, single boxes erased
+                while len(dc) > 1:
+                    iou = bbox_iou(dc[:1], dc[1:])  # iou with other boxes
+                    if iou.max() > 0.5:
+                        det_max.append(dc[:1])
+                    dc = dc[1:][iou < nms_thres]  # remove ious > threshold
+
+            elif nms_style == 'MERGE':  # weighted mixture box
+                while len(dc) > 0:
+                    iou = bbox_iou(dc[:1], dc[0:])  # iou with other boxes
+                    i = iou > nms_thres
+
+                    weights = dc[i, 4:5] * dc[i, 5:6]
+                    dc[0, :4] = (weights * dc[i, :4]).sum(0) / weights.sum()
+                    det_max.append(dc[:1])
+                    dc = dc[iou < nms_thres]
+
+                # Image      Total          P          R        mAP
+                #  4964       5000      0.633      0.598      0.589  # normal
+
+            if len(det_max) > 0:
+                det_max = torch.cat(det_max)
+                # Add max detections to outputs
+                output[image_i] = det_max if output[image_i] is None else torch.cat((output[image_i], det_max))
+
+    return output
+
+def bbox_iou(box1, box2, x1y1x2y2=True):
+    """
+    Returns the IoU of two bounding boxes
+    """
+    if x1y1x2y2:
+        # Get the coordinates of bounding boxes
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1[:, 0], box1[:, 1], box1[:, 2], box1[:, 3]
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2[:, 0], box2[:, 1], box2[:, 2], box2[:, 3]
+    else:
+        # Transform from center and width to exact coordinates
+        b1_x1, b1_x2 = box1[:, 0] - box1[:, 2] / 2, box1[:, 0] + box1[:, 2] / 2
+        b1_y1, b1_y2 = box1[:, 1] - box1[:, 3] / 2, box1[:, 1] + box1[:, 3] / 2
+        b2_x1, b2_x2 = box2[:, 0] - box2[:, 2] / 2, box2[:, 0] + box2[:, 2] / 2
+        b2_y1, b2_y2 = box2[:, 1] - box2[:, 3] / 2, box2[:, 1] + box2[:, 3] / 2
+
+    # get the coordinates of the intersection rectangle
+    inter_rect_x1 = torch.max(b1_x1, b2_x1)
+    inter_rect_y1 = torch.max(b1_y1, b2_y1)
+    inter_rect_x2 = torch.min(b1_x2, b2_x2)
+    inter_rect_y2 = torch.min(b1_y2, b2_y2)
+    # Intersection area
+    inter_area = torch.clamp(inter_rect_x2 - inter_rect_x1, 0) * torch.clamp(inter_rect_y2 - inter_rect_y1, 0)
+    # Union Area
+    b1_area = (b1_x2 - b1_x1) * (b1_y2 - b1_y1)
+    b2_area = (b2_x2 - b2_x1) * (b2_y2 - b2_y1)
+
+    return inter_area / (b1_area + b2_area - inter_area + 1e-16)
+
+def ap_per_class(tp, conf, pred_cls, target_cls):
+    """ Compute the average precision, given the recall and precision curves.
+    Method originally from https://github.com/rafaelpadilla/Object-Detection-Metrics.
+    # Arguments
+        tp:    True positives (list).
+        conf:  Objectness value from 0-1 (list).
+        pred_cls: Predicted object classes (list).
+        target_cls: True object classes (list).
+    # Returns
+        The average precision as computed in py-faster-rcnn.
+    """
+
+    # lists/pytorch to numpy
+    tp, conf, pred_cls, target_cls = np.array(tp), np.array(conf), np.array(pred_cls), np.array(target_cls)
+
+    # Sort by objectness
+    i = np.argsort(-conf)
+    tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
+
+    # Find unique classes
+    unique_classes = np.unique(np.concatenate((pred_cls, target_cls), 0))
+
+    # Create Precision-Recall curve and compute AP for each class
+    ap, p, r = [], [], []
+    for c in unique_classes:
+        i = pred_cls == c
+        n_gt = sum(target_cls == c)  # Number of ground truth objects
+        n_p = sum(i)  # Number of predicted objects
+
+        if (n_p == 0) and (n_gt == 0):
+            continue
+        elif (n_p == 0) or (n_gt == 0):
+            ap.append(0)
+            r.append(0)
+            p.append(0)
+        else:
+            # Accumulate FPs and TPs
+            fpc = np.cumsum(1 - tp[i])
+            tpc = np.cumsum(tp[i])
+
+            # Recall
+            recall_curve = tpc / (n_gt + 1e-16)
+            r.append(tpc[-1] / (n_gt + 1e-16))
+
+            # Precision
+            precision_curve = tpc / (tpc + fpc)
+            p.append(tpc[-1] / (tpc[-1] + fpc[-1]))
+
+            # AP from recall-precision curve
+            ap.append(compute_ap(recall_curve, precision_curve))
+
+    return np.array(ap), unique_classes.astype('int32'), np.array(r), np.array(p)
+
+
+def compute_ap(recall, precision):
+    """ Compute the average precision, given the recall and precision curves.
+    Code originally from https://github.com/rbgirshick/py-faster-rcnn.
+    # Arguments
+        recall:    The recall curve (list).
+        precision: The precision curve (list).
+    # Returns
+        The average precision as computed in py-faster-rcnn.
+    """
+    # correct AP calculation
+    # first append sentinel values at the end
+
+    mrec = np.concatenate(([0.], recall, [1.]))
+    mpre = np.concatenate(([0.], precision, [0.]))
+
+    # compute the precision envelope
+    for i in range(mpre.size - 1, 0, -1):
+        mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
+
+    # to calculate area under PR curve, look for points
+    # where X axis (recall) changes value
+    i = np.where(mrec[1:] != mrec[:-1])[0]
+
+    # and sum (\Delta recall) * prec
+    ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
+    return ap
+
 class YOLOTest():
     def __init__(self, device, model):
         self.device = device
         self.model = model
-        self.dataloader = LoadImagesAndLabels('./data/yolo/5k.txt', batch_size=16, img_size=416)
+        self.dataloader = LoadImagesAndLabels('./data/yolo/5k.txt', batch_size=2, img_size=416)
     
-    def test(self, batch_size=16, img_size=416, iou_thres=0.5, conf_thres=0.3, nms_thres=0.45):
+    def test(self, batch_size=2, img_size=416, iou_thres=0.5, conf_thres=0.3, nms_thres=0.45):
         nC = 80
 
         mean_mAP, mean_R, mean_P, seen = 0.0, 0.0, 0.0, 0
@@ -403,7 +638,6 @@ class YOLOTest():
             t = time.time()
             output = model(imgs.to(self.device))
             output = non_max_suppression(output, conf_thres=conf_thres, nms_thres=nms_thres)
-
             # Compute average precision for each sample
             for si, (labels, detections) in enumerate(zip(targets, output)):
                 seen += 1
@@ -411,28 +645,13 @@ class YOLOTest():
                 if detections is None:
                     # If there are labels but no detections mark as zero AP
                     if labels.size(0) != 0:
+                        print("we here")
                         mAPs.append(0), mR.append(0), mP.append(0)
                     continue
 
                 # Get detections sorted by decreasing confidence scores
                 detections = detections.cpu().numpy()
                 detections = detections[np.argsort(-detections[:, 4])]
-
-                if save_json:
-                    # [{"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}, ...
-                    box = torch.from_numpy(detections[:, :4]).clone()  # xyxy
-                    scale_coords(img_size, box, shapes[si])  # to original shape
-                    box = xyxy2xywh(box)  # xywh
-                    box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
-
-                    # add to json dictionary
-                    for di, d in enumerate(detections):
-                        jdict.append({
-                            'image_id': int(Path(paths[si]).stem.split('_')[-1]),
-                            'category_id': coco91class[int(d[6])],
-                            'bbox': [float3(x) for x in box[di]],
-                            'score': float3(d[4] * d[5])
-                        })
 
                 # If no labels add number of detections as incorrect
                 correct = []
@@ -495,15 +714,19 @@ class YOLOTest():
         return mean_mAP, mean_R, mean_P
 
 if __name__ == '__main__':
+    print("Loading model..")
     model = MaskedDarknet('./yolo.cfg')
     model.to('cuda:0')
     model.load_state_dict(torch.load('./models/yolov3.pt')['model'])
-    masks = weight_prune(model, 80.)
-    model.set_mask(masks)
-    prune_rate(model)
+    print("Pruning model..")
+    # masks = weight_prune(model, 80.)
+    # model.set_mask(masks)
+    # prune_rate(model)
 
-    yolotester = YOLOTest('cuda:0', model)
-    yolotester.test()
+    with torch.no_grad():
+        print("Testing model..")
+        yolotester = YOLOTest('cuda:0', model)
+        yolotester.test()
 
 
 # conv_1 = MaskedConv2d(out_chanels=32, kernel_size=3, stride=1, padding=1)
@@ -511,4 +734,4 @@ if __name__ == '__main__':
 
 # Downsampling
 
-# conv_2 = MaskedConv2d(out_channels=64, kernel_size=3, str)
+# conv_2 = MaskedConv2d(out_channels=64, kernel_size=3, str)f
