@@ -1,9 +1,10 @@
 from __future__ import print_function
 
-import argparse
 import json
 import os
 import numpy as np
+import argparse
+import datetime
 
 import torch
 import torch.nn as nn
@@ -17,8 +18,11 @@ from mnist_classifier import MaskedMNist
 from pruning.methods import weight_prune, prune_rate, get_all_weights, quantize_k_means
 from pruning.utils import to_var
 from resnet import MaskedResNet18, MaskedResNet34, MaskedResNet50, MaskedResNet101, MaskedResNet152
+from classifier_utils import setup_default_args
 
 from tensorboardX import SummaryWriter
+
+from configurations import configurations
 
 def get_list_choice(choices):
     for i, m in enumerate(choices):
@@ -46,42 +50,87 @@ def load_model(model_file_name, configuration):
     train_loder = torch.utils.data.DataLoader(train_data, batch_size=1000, shuffle=True, num_workers=1, pin_memory=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=1000, shuffle=True, num_workers=1, pin_memory=True)
 
-    return Classifier(model, 'cuda', train_loder, test_loader)
+    return Classifier(model, 'cuda', train_loader, test_loader)
+
+def classifier_config(config, args):
+    model = config['model']()
+    device = 'cpu' if args.no_cuda else 'cuda'
+
+    train_data = test_data = config['dataset'](
+        './data', train=True, download=True, transform=transforms.Compose(config['transforms'])
+    )
+
+    test_data = config['dataset'](
+        './data', train=False, download=True, transform=transforms.Compose(config['transforms'])
+    )
+
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=1, pin_memory=True)
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.test_batch_size, shuffle=True, num_workers=1, pin_memory=True)
+    optimizer = config['optimizer'](model.parameters(), lr=args.lr, momentum=args.momentum)
+    
+    wrapper = Classifier(model, 'cuda', train_loader, test_loader)
+
+    if (args.pretrained_weights):
+        model.load_state_dict(torch.load(args.pretrained_weights))
+    else:
+        for epoch in range(1, args.epochs + 1):
+            wrapper.train(args.log_interval, optimizer, epoch, config['loss_fn'])
+    
+    pre_prune_accuracy = wrapper.test(config['loss_fn'])    
+    prune_perc = 0.
+    prune_iter = 0
+    curr_accuracy = pre_prune_accuracy
+
+    while (pre_prune_accuracy - curr_accuracy) < args.prune_threshold:
+        prune_iter += 1
+        prune_perc += 5.
+        masks = weight_prune(model, prune_perc)
+        model.set_mask(masks)
+
+        print(f"Testing at prune percentage {prune_perc}..")
+        curr_accuracy = wrapper.test(config["loss_fn"])
+
+        print(f"Accuracy achieved: {curr_accuracy}")
+        print(f"Change in accuracy: {pre_prune_accuracy - curr_accuracy}")
+
+        for epoch in range(1, args.epochs + 1):
+            wrapper.train(args.log_interval, optimizer, epoch, config['loss_fn'])
+
+    prune_perc = prune_rate(model)    
+
+    if (args.save_model):
+        torch.save(model.state_dict(), f'{config["name"]}-pruned-{datetime.datetime.now()}')
+
+    print(f"Pruned model: {config['name']}")
+    print(f"Pre-pruning accuracy: {pre_prune_accuracy}")
+    print(f"Post-pruning accuracy: {curr_accuracy}")
+    print(f"Pruning percentage: {prune_perc}")
 
 def main():
-    configurations = [
-        {
-            'model': MaskedCifar,
-            'dataset': datasets.CIFAR10,
-            'transforms': 
-                        [
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                        ],
-            'loss_fn': F.cross_entropy
-        },
-        {
-            'model': MaskedMNist,
-            'dataset': datasets.MNIST,
-            'transforms':
-                        [
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.1307,), (0.3081,))
-                        ],
-            'loss_fn': F.nll_loss
-        },
-        {
-            'model': MaskedResNet18,
-            'dataset': datasets.CIFAR10,
-            'transforms':
-                        [
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                        ],
-            'loss_fn': F.cross_entropy
-        }
-    ]
+    parser = argparse.ArgumentParser(description='PyTorch Cifar Example')
 
+    parser.add_argument('--config', type=str, required=True, metavar="C",
+                        help="Name of the configuration in configurations.py to run.")
+
+    parser.add_argument('--pretrained-weights', type=str,
+                        help="Path of the pretrained weights to load.")
+    
+    parser.add_argument('--prune-threshold', type=float, default=0.05)
+
+    parser.add_argument('--retrain', type=bool, default=True)
+
+    setup_default_args(parser)
+    args = parser.parse_args()
+    
+    chosen_config = [x for x in configurations if x['name'] == args.config]
+    
+    if len(chosen_config) != 1:
+        raise ValueError("Invalid configuration parameter.")
+    
+    if chosen_config[0]['type'] == 'classifier':
+        classifier_config(chosen_config[0], args)
+
+def main_old():
     writer = SummaryWriter()
 
     print("Select a model type to prune. Models available:")
