@@ -77,7 +77,7 @@ def classifier_config(config, args):
             wrapper.train(args.log_interval, optimizer, epoch, config['loss_fn'])
     
     pre_prune_accuracy = wrapper.test(config['loss_fn'])    
-    prune_perc = 0.
+    prune_perc = 0. if args.start_at_prune_rate is None else args.start_at_prune_rate
     prune_iter = 0
     curr_accuracy = pre_prune_accuracy
 
@@ -118,6 +118,8 @@ def main():
     parser.add_argument('--prune-threshold', type=float, default=0.05)
 
     parser.add_argument('--retrain', type=bool, default=True)
+
+    parser.add_argument('--start-at-prune-rate', type=float)
 
     setup_default_args(parser)
     args = parser.parse_args()
