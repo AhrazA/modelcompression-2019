@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import json
 import time
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -711,14 +712,15 @@ class YOLOTest():
     def __init__(self, device, model):
         self.device = device
         self.model = model
-        self.dataloader = LoadImagesAndLabels('/home/mlt/BayesThesis/masters-thesis-2019/yolodata/coco/5k.txt', batch_size=16, img_size=416)
-    
-    def train(self, epochs, optimizer, lr0, var=0, accumulated_batches=1):
+
+    def train(self, train_dataloader, val_dataloader, epochs, optimizer, lr0, var=0, accumulated_batches=1):
         # Start training
         t0 = time.time()
-        n_burnin = min(round(self.dataloader.nB / 5 + 1), 1000)  # number of burn-in batches
+        n_burnin = min(round(train_dataloader.nB / 5 + 1), 1000)  # number of burn-in batches
         start_epoch = 0
         best_loss = float('inf')
+        best_map = -1.
+        best_weights = None
 
         for epoch in range(epochs):
             epoch += start_epoch
@@ -740,7 +742,7 @@ class YOLOTest():
             ui = -1
             rloss = defaultdict(float)  # running loss
             optimizer.zero_grad()
-            for i, (imgs, targets, _, _) in enumerate(self.dataloader):
+            for i, (imgs, targets, _, _) in enumerate(train_dataloader):
                 if sum([len(x) for x in targets]) < 1:  # if no targets continue
                     continue
 
@@ -757,7 +759,7 @@ class YOLOTest():
                 loss.backward()
 
                 # Accumulate gradient for x batches before optimizing
-                if ((i + 1) % accumulated_batches == 0) or (i == len(self.dataloader) - 1):
+                if ((i + 1) % accumulated_batches == 0) or (i == len(train_dataloader) - 1):
                     optimizer.step()
                     optimizer.zero_grad()
 
@@ -768,7 +770,7 @@ class YOLOTest():
 
                 s = ('%8s%12s' + '%10.3g' * 7) % (
                     '%g/%g' % (epoch, epochs - 1),
-                    '%g/%g' % (i, len(self.dataloader) - 1),
+                    '%g/%g' % (i, len(train_dataloader) - 1),
                     rloss['xy'], rloss['wh'], rloss['conf'],
                     rloss['cls'], rloss['loss'],
                     self.model.losses['nT'], time.time() - t0)
@@ -800,15 +802,19 @@ class YOLOTest():
 
             # Calculate mAP
             with torch.no_grad():
-                mAP, R, P = self.test()
+                mAP, R, P = self.test(val_dataloader)
+
+                if mAP > best_map:
+                    best_map = mAP
+                    best_weights = copy.deepcopy(self.model.state_dict())
 
             # Write epoch results
             with open('results.txt', 'a') as file:
                 file.write(s + '%11.3g' * 3 % (mAP, P, R) + '\n')
         
-        return mAP
+        return best_map, best_weights
 
-    def test(self, batch_size=16, img_size=416, iou_thres=0.5, conf_thres=0.3, nms_thres=0.45):
+    def test(self, dataloader, batch_size=16, img_size=416, iou_thres=0.5, conf_thres=0.3, nms_thres=0.45):
         nC = 80
 
         mean_mAP, mean_R, mean_P, seen = 0.0, 0.0, 0.0, 0
@@ -816,7 +822,7 @@ class YOLOTest():
         outputs, mAPs, mR, mP, TP, confidence, pred_class, target_class, jdict = \
             [], [], [], [], [], [], [], [], []
         AP_accum, AP_accum_count = np.zeros(nC), np.zeros(nC)
-        for batch_i, (imgs, targets, paths, shapes) in enumerate(self.dataloader):
+        for batch_i, (imgs, targets, paths, shapes) in enumerate(dataloader):
             t = time.time()
             output = model(imgs.to(self.device))
             output = non_max_suppression(output, conf_thres=conf_thres, nms_thres=nms_thres)
@@ -883,7 +889,7 @@ class YOLOTest():
 
             # Print image mAP and running mean mAP
             print(('%11s%11s' + '%11.3g' * 4 + 's') %
-                (seen, self.dataloader.nF, mean_P, mean_R, mean_mAP, time.time() - t))
+                (seen, dataloader.nF, mean_P, mean_R, mean_mAP, time.time() - t))
 
         # Print mAP per class
         print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP'))
@@ -900,14 +906,16 @@ if __name__ == '__main__':
 
     acc_threshold = .005
     prune_perc = 0.
-    curr_acc = start_acc = -500
     yolotester = YOLOTest('cuda:1', model)
+    
+    test_dataloader = LoadImagesAndLabels('/home/mlt/BayesThesis/masters-thesis-2019/yolodata/coco/5k.txt', batch_size=16, img_size=416)
+    train_dataloader = LoadImagesAndLabels('/home/mlt/BayesThesis/masters-thesis-2019/yolodata/coco/train.txt', batch_size=16, img_size=416)
+    val_dataloader = LoadImagesAndLabels('/home/mlt/BayesThesis/masters-thesis-2019/yolodata/coco/val.txt', batch_size=16, img_size=416)
 
     with torch.no_grad():
-        mAP, _, _ = yolotester.test()
-        curr_acc = mAP
-        start_acc = mAP
-    
+        curr_acc, _, _  = yolotester.test(val_dataloader)
+        start_acc = copy.deepcopy(curr_acc)
+
     while (start_acc - curr_acc) < acc_threshold:
         prune_perc += 5.
 
@@ -916,21 +924,26 @@ if __name__ == '__main__':
             for i in m:
                 for j in i:
                     j.to('cuda:1')
-                    print(j)
         
         model.set_mask(masks)
         prune_rate(model)
         lr0 = 0.001
 
         optimizer = torch.optim.SGD(filter(lambda x: x.requires_grad, model.parameters()), lr=lr0, momentum=.9)
-        yolotester.train(3, optimizer, lr0)
+        curr_acc, best_weights = yolotester.train(train_dataloader, val_dataloader, 3, optimizer, lr0)
 
-        with torch.no_grad():
-            print("Testing model..")
-            curr_acc, _, _ = yolotester.test()
-            print("Curr acc: ", curr_acc)
-            print("Start acc: ", start_acc)
-            print("Acc diff:", start_acc - curr_acc)
+        print("Loading best weights from training epochs..")
+        model.load_state_dict(best_weights)
+        print("Curr acc: ", curr_acc)
+        print("Start acc: ", start_acc)
+        print("Acc diff:", start_acc - curr_acc)
+
+    with torch.no_grad():
+        print("Testing model..")
+        curr_acc, _, _ = yolotester.test(test_dataloader)
+        print("Curr acc: ", curr_acc)
+        print("Start acc: ", start_acc)
+        print("Acc diff:", start_acc - curr_acc)
 
 # conv_1 = MaskedConv2d(out_chanels=32, kernel_size=3, stride=1, padding=1)
 # conv_1_activation = nn.LeakyReLU(0.1)
