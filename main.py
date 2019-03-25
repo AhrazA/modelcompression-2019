@@ -142,7 +142,7 @@ def classifier_config(config, args):
     print(f"Percentage of zeroes: {prune_perc}")
 
 def main():
-    parser = argparse.ArgumentParser(description='PyTorch Cifar Example')
+    parser = argparse.ArgumentParser(description='Test Bench')
 
     parser.add_argument('--config', type=str, required=True, metavar="C",
                         help="Name of the configuration in configurations.py to run.")
@@ -150,11 +150,13 @@ def main():
     parser.add_argument('--pretrained-weights', type=str,
                         help="Path of the pretrained weights to load.")
     
-    parser.add_argument('--prune-threshold', type=float, default=0.05)
+    parser.add_argument('--prune-threshold', type=float, default=0.05,
+                        help='The accuracy threshold at which to stop pruning.')
 
-    parser.add_argument('--no-retrain', action='store_true', help="Do not retrain after pruning.")
+    parser.add_argument('--no-retrain', action='store_true',
+                        help="Do not retrain after pruning.")
 
-    parser.add_argument('--start-at-prune-rate', type=float)
+    parser.add_argument('--start-at-prune-rate', type=float, help="The percentage to begin pruning at. Default: 0")
 
     setup_default_args(parser)
     args = parser.parse_args()
