@@ -302,6 +302,8 @@ class YoloWrapper():
             rloss = defaultdict(float)  # running loss
             optimizer.zero_grad()
             for i, (imgs, targets, _, _) in enumerate(train_dataloader):
+                if i > 2:break
+
                 if sum([len(x) for x in targets]) < 1:  # if no targets continue
                     continue
 
@@ -382,8 +384,9 @@ class YoloWrapper():
             [], [], [], [], [], [], [], [], []
         AP_accum, AP_accum_count = np.zeros(nC), np.zeros(nC)
         for batch_i, (imgs, targets, paths, shapes) in enumerate(dataloader):
+            if batch_i > 2:break
             t = time.time()
-            output = model(imgs.to(self.device))
+            output = self.model(imgs.to(self.device))
             output = non_max_suppression(output, conf_thres=conf_thres, nms_thres=nms_thres)
             # Compute average precision for each sample
             for si, (labels, detections) in enumerate(zip(targets, output)):
@@ -452,51 +455,3 @@ class YoloWrapper():
 
         # Return mAP
         return mean_mAP, mean_R, mean_P
-
-if __name__ == '__main__':
-    print("Loading model..")
-    model = MaskedDarknet('./yolo.cfg')
-    model.to('cuda:0')
-    model.load_state_dict(torch.load('./models/yolov3.pt')["model"])
-    print("Pruning model..")
-
-    acc_threshold = .005
-    prune_perc = 0.
-    yolotester = YoloWrapper('cuda:0', model)
-    
-    test_dataloader = LoadImagesAndLabels('./data/yolo/5k.txt', batch_size=2, img_size=416)
-    train_dataloader = LoadImagesAndLabels('./data/yolo/train.txt', batch_size=2, img_size=416)
-    val_dataloader = LoadImagesAndLabels('./data/yolo/val.txt', batch_size=2, img_size=416)
-
-    with torch.no_grad():
-        curr_acc, _, _  = yolotester.test(val_dataloader)
-        start_acc = copy.deepcopy(curr_acc)
-
-    while (start_acc - curr_acc) < acc_threshold:
-        prune_perc += 5.
-
-        masks = weight_prune(model, prune_perc)
-        for m in masks:
-            for i in m:
-                for j in i:
-                    j.to('cuda:0')
-        
-        model.set_mask(masks)
-        prune_rate(model)
-        lr0 = 0.001
-
-        optimizer = torch.optim.SGD(filter(lambda x: x.requires_grad, model.parameters()), lr=lr0, momentum=.9)
-        curr_acc, best_weights = yolotester.train(train_dataloader, val_dataloader, 3, optimizer, lr0)
-
-        print("Loading best weights from training epochs..")
-        model.load_state_dict(best_weights)
-        print("Curr acc: ", curr_acc)
-        print("Start acc: ", start_acc)
-        print("Acc diff:", start_acc - curr_acc)
-
-    with torch.no_grad():
-        print("Testing model..")
-        curr_acc, _, _ = yolotester.test(test_dataloader)
-        print("Curr acc: ", curr_acc)
-        print("Start acc: ", start_acc)
-        print("Acc diff:", start_acc - curr_acc)

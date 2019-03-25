@@ -55,10 +55,12 @@ configurations = [
         'type': 'yolo',
         'model': MaskedDarknet,
         'wrapper': YoloWrapper,
+        'config_path': './yolo.cfg',
+        'image_size': 416,
         'datasets': {
-            'train': './data/yolo/train.txt',
-            'test': './data/yolo/test.txt',
-            'val': './data/yolo/train.txt',
+            'train': 'D:\data\coco2014\\train.txt',
+            'test': 'D:\data\coco2014\\test.txt',
+            'val': 'D:\data\coco2014\\train.txt',
         },
         'optimizer': optim.SGD
     }

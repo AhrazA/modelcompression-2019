@@ -36,39 +36,3 @@ class MaskedCifar(nn.Module):
         self.fc1.set_mask(masks[2])
         self.fc2.set_mask(masks[3])
         self.fc3.set_mask(masks[4])
-
-def main():
-    parser = argparse.ArgumentParser(description='PyTorch Cifar Example')
-    setup_default_args(parser)
-    args = parser.parse_args()
-    
-    torch.manual_seed(args.seed)
-    kwargs = {'num_workers': 1, 'pin_memory': True} if not args.no_cuda else {}
-
-    train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10('./data', train=True, download=True,
-                       transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                       ])),
-        batch_size=args.batch_size, shuffle=True, **kwargs)
-    
-    test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10('./data', train=False, transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                       ])),
-        batch_size=args.test_batch_size, shuffle=True, **kwargs)
-
-    classifier = Classifier(MaskedCifar(), 'cuda', train_loader, test_loader)
-    optimizer = optim.SGD(classifier.model.parameters(), lr=args.lr, momentum=args.momentum)
-
-    for epoch in range(1, args.epochs + 1):
-        classifier.train(args.log_interval, optimizer, epoch, F.cross_entropy)
-        classifier.test(F.cross_entropy)
-    
-    if (args.save_model):
-        torch.save(classifier.model.state_dict(),"models/cifar_classifier.pt")
-
-if __name__ == '__main__':
-    main()
