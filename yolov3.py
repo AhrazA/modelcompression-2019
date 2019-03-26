@@ -302,8 +302,6 @@ class YoloWrapper():
             rloss = defaultdict(float)  # running loss
             optimizer.zero_grad()
             for i, (imgs, targets, _, _) in enumerate(train_dataloader):
-                if i > 2:break
-
                 if sum([len(x) for x in targets]) < 1:  # if no targets continue
                     continue
 
@@ -384,7 +382,6 @@ class YoloWrapper():
             [], [], [], [], [], [], [], [], []
         AP_accum, AP_accum_count = np.zeros(nC), np.zeros(nC)
         for batch_i, (imgs, targets, paths, shapes) in enumerate(dataloader):
-            if batch_i > 2:break
             t = time.time()
             output = self.model(imgs.to(self.device))
             output = non_max_suppression(output, conf_thres=conf_thres, nms_thres=nms_thres)

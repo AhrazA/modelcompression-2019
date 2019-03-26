@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torchvision import datasets, transforms
+# from torchvision import datasets, transforms
 
 from cifar_classifier import MaskedCifar
 from classifier import Classifier
@@ -31,14 +31,14 @@ def yolo_config(config, args):
     #     if input("Input y if you are sure you want to continue.") != 'y': return
 
     model = config['model'](config['config_path'])
-    device = 'cpu' if args.no_cuda else 'cuda'
+    device = 'cpu' if args.no_cuda else 'cuda:1'
     wrapper = YoloWrapper(device, model)
     lr0 = 0.001
     optimizer = torch.optim.SGD(filter(lambda x: x.requires_grad, model.parameters()), lr=lr0, momentum=.9)
 
     print("Loading dataloaders..")
     train_dataloader = LoadImagesAndLabels(config['datasets']['train'], batch_size=args.batch_size, img_size=config['image_size'])
-    val_dataloader = LoadImagesAndLabels(config['datasets']['val'], batch_size=args.batch_size, img_size=config['image_size'])
+    val_dataloader = LoadImagesAndLabels(config['datasets']['val'] if config['val_set_for_train'] == 'val' else config['datasets']['test'], batch_size=args.batch_size, img_size=config['image_size'])
 
     model.to(device)
 
