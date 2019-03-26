@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-# from torchvision import datasets, transforms
 
 class Classifier:
     def __init__(self, model, device, train_loader, test_loader):
@@ -47,6 +46,6 @@ class Classifier:
             final_loss, correct, len(self._test_loader.dataset),
             100. * correct / len(self._test_loader.dataset)))
         
-        return 100. * correct / len(self._test_loader.dataset)
+        return correct / len(self._test_loader.dataset)
         
     
