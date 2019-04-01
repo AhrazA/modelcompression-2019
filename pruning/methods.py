@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.cluster import KMeans
 from scipy.sparse import csc_matrix, csr_matrix
+import pdb
+import datetime
 
 def get_all_weights(model):
     weights = []
@@ -47,11 +49,6 @@ def quantize_k_means(model, bits=5):
         dev = module.weight.device
         weight = module.weight.data.cpu().numpy()
         original_shape = weight.shape
-
-        if 'Masked' in str(type(module)):
-            mask = module.mask.data.cpu().numpy()
-            weight = mask * weight
-        
         weight = np.reshape(weight, (2, -1))
         mat = csr_matrix(weight)
         min_ = min(mat.data)
@@ -59,8 +56,35 @@ def quantize_k_means(model, bits=5):
         space = np.linspace(min_, max_, num=2**bits)
         kmeans = KMeans(n_clusters=len(space), init=space.reshape(-1,1), n_init=1, precompute_distances=True, algorithm="full")
         kmeans.fit(mat.reshape(-1,1))
+
         weight = kmeans.cluster_centers_[kmeans.labels_].reshape(original_shape)
-        module.weight.data = torch.from_numpy(weight).to(dev)
+        weight_tensor = torch.tensor(weight, requires_grad=True).to(dev)
+
+        # Use register_hooks to recalculate the gradients
+        module.weight.data = weight_tensor
+        module.weight.register_hook(gen_param_hook(torch.from_numpy(kmeans.labels_), dev))
+
+def gen_param_hook(c_labels, dev):
+    
+    def hook(grad):
+        # print(f"Retraining start time {datetime.datetime.now()}")
+        grad_original_shape = grad.shape
+        grads = grad.reshape(-1, 1)
+        updates = {}
+
+        for i, g in enumerate(grads):
+            cluster_id = c_labels[i].item()
+
+            if cluster_id not in updates:
+                updates[cluster_id] = g
+            else:
+                updates[cluster_id] += g
+        updated_grads = torch.tensor([updates[c_labels[i].item()] for i in range(len(grads))]).to(dev).reshape(grad_original_shape)
+
+        # print(f"Retrain end time {datetime.datetime.now()}")
+        return updated_grads
+    
+    return hook
 
 def weight_prune(model, pruning_perc):
     '''
