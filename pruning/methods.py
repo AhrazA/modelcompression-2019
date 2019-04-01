@@ -68,9 +68,18 @@ def gen_param_hook(c_labels, dev):
     
     def hook(grad):
         # print(f"Retraining start time {datetime.datetime.now()}")
+        print(grad.device)
         grad_original_shape = grad.shape
+        reshape_start_time = datetime.datetime.now()
         grads = grad.reshape(-1, 1)
+        reshape_end_time = datetime.datetime.now()
+
+        print(f"Reshape took: {reshape_end_time - reshape_start_time}")
+
         updates = {}
+        start_time = datetime.datetime.now()
+
+        enumartion_start_time = datetime.datetime.now()
 
         for i, g in enumerate(grads):
             cluster_id = c_labels[i].item()
@@ -79,9 +88,17 @@ def gen_param_hook(c_labels, dev):
                 updates[cluster_id] = g
             else:
                 updates[cluster_id] += g
+
+        enumeration_end_time = datetime.datetime.now()
+
+        print(f"Enumeration time took: {enumeration_end_time - enumartion_start_time}")
+
         updated_grads = torch.tensor([updates[c_labels[i].item()] for i in range(len(grads))]).to(dev).reshape(grad_original_shape)
 
         # print(f"Retrain end time {datetime.datetime.now()}")
+        end_time = datetime.datetime.now()
+        print(f"Weight vector with {i} gradients took {end_time - start_time} to cluster gradient updates.")
+
         return updated_grads
     
     return hook

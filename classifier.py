@@ -6,8 +6,7 @@ import copy
 
 class Classifier:
     def __init__(self, model, device, train_loader, test_loader):
-        use_cuda = device == 'cuda' and torch.cuda.is_available()
-        self._device = torch.device("cuda" if use_cuda else "cpu")
+        self._device = device
         self._model = model.to(device)
         self._train_loader = train_loader
         self._test_loader = test_loader

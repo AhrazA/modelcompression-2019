@@ -35,7 +35,7 @@ class Upsample(nn.Module):
         return F.interpolate(x, scale_factor=self.scale_factor, mode=self.mode)
 
 class YOLOLayer(nn.Module):
-    def __init__(self, anchors, nC, img_size, yolo_layer, cfg, device='cuda:0'):
+    def __init__(self, anchors, nC, img_size, yolo_layer, cfg, device='cuda:1'):
         super(YOLOLayer, self).__init__()
 
         nA = len(anchors)
@@ -115,7 +115,7 @@ class YOLOLayer(nn.Module):
 class MaskedDarknet(nn.Module):
     """YOLOv3 object detection model"""
 
-    def __init__(self, cfg_path, img_size=416, device='cuda:0'):
+    def __init__(self, cfg_path, img_size=416, device='cuda:1'):
         super(MaskedDarknet, self).__init__()
 
         self.module_defs = parse_model_cfg(cfg_path)
