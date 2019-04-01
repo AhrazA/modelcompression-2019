@@ -1,16 +1,9 @@
-from __future__ import print_function
-
-import json
-import os
-import numpy as np
 import argparse
 import datetime
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-# from torchvision import datasets, transforms
+from torchvision import datasets, transforms
 
 from cifar_classifier import MaskedCifar
 from classifier import Classifier
@@ -31,10 +24,10 @@ def yolo_config(config, args):
     #     if input("Input y if you are sure you want to continue.") != 'y': return
 
     model = config['model'](config['config_path'])
-    device = 'cpu' if args.no_cuda else 'cuda:1'
+    device = 'cpu' if args.no_cuda else 'cuda:0'
     wrapper = YoloWrapper(device, model)
     lr0 = 0.001
-    optimizer = torch.optim.SGD(filter(lambda x: x.requires_grad, model.parameters()), lr=lr0, momentum=.9)
+    optimizer = config['optimizer'](filter(lambda x: x.requires_grad, model.parameters()), lr=lr0, momentum=args.momentum)
 
     print("Loading dataloaders..")
     train_dataloader = LoadImagesAndLabels(config['datasets']['train'], batch_size=args.batch_size, img_size=config['image_size'])
@@ -84,6 +77,8 @@ def yolo_config(config, args):
     print(f"Post-pruning mAP: {curr_mAP}")
     print(f"Percentage of zeroes: {prune_perc}")
 
+    return wrapper
+
 def classifier_config(config, args):
     model = config['model']()
     device = 'cpu' if args.no_cuda else 'cuda'
@@ -106,8 +101,7 @@ def classifier_config(config, args):
         print("Loading pretrained weights..")
         model.load_state_dict(torch.load(args.pretrained_weights))
     else:
-        for epoch in range(1, args.epochs + 1):
-            wrapper.train(args.log_interval, optimizer, epoch, config['loss_fn'])
+        wrapper.train(args.log_interval, optimizer, args.epochs, config['loss_fn'])
     
     pre_prune_accuracy = wrapper.test(config['loss_fn'])    
     prune_perc = 0. if args.start_at_prune_rate is None else args.start_at_prune_rate
@@ -126,11 +120,16 @@ def classifier_config(config, args):
         print(f"Accuracy achieved: {curr_accuracy}")
         print(f"Change in accuracy: {pre_prune_accuracy - curr_accuracy}")
 
-        if args.no_retrain: continue
-        
-        for epoch in range(1, args.epochs + 1):
-            wrapper.train(args.log_interval, optimizer, epoch, config['loss_fn'])
+        if not args.no_retrain:
+            print(f"Retraining at prune percentage {prune_perc}..")
+            curr_accuracy, best_weights = wrapper.train(args.log_interval, optimizer, args.epochs, config['loss_fn'])
 
+            print("Loading best weights from training epochs..")
+            model.load_state_dict(best_weights)
+        else:
+            with torch.no_grad():
+                curr_accuracy, _, _ = wrapper.test(config['loss_fn'])
+    
     prune_perc = prune_rate(model)    
 
     if (args.save_model):
@@ -140,6 +139,8 @@ def classifier_config(config, args):
     print(f"Pre-pruning accuracy: {pre_prune_accuracy}")
     print(f"Post-pruning accuracy: {curr_accuracy}")
     print(f"Percentage of zeroes: {prune_perc}")
+
+    return wrapper
 
 def main():
     parser = argparse.ArgumentParser(description='Test Bench')
@@ -160,7 +161,6 @@ def main():
 
     setup_default_args(parser)
     args = parser.parse_args()
-    print(args)
     
     chosen_config = [x for x in configurations if x['name'] == args.config]
     
@@ -168,10 +168,10 @@ def main():
         raise ValueError("Invalid configuration parameter.")
     
     if chosen_config[0]['type'] == 'classifier':
-        classifier_config(chosen_config[0], args)
+        wrapper = classifier_config(chosen_config[0], args)
     
     if chosen_config[0]['type'] == 'yolo':
-        yolo_config(chosen_config[0], args)
-
+        wrapper = yolo_config(chosen_config[0], args)
+    
 if __name__ == '__main__':
     main()

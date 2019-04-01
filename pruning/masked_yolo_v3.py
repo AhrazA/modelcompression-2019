@@ -115,7 +115,7 @@ class YOLOLayer(nn.Module):
 class MaskedDarknet(nn.Module):
     """YOLOv3 object detection model"""
 
-    def __init__(self, cfg_path, img_size=416, device='cuda:1'):
+    def __init__(self, cfg_path, img_size=416, device='cuda:0'):
         super(MaskedDarknet, self).__init__()
 
         self.module_defs = parse_model_cfg(cfg_path)

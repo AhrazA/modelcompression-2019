@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import copy
 
 class Classifier:
     def __init__(self, model, device, train_loader, test_loader):
@@ -15,19 +16,33 @@ class Classifier:
     def model(self):
         return self._model
     
-    def train(self, log_interval, optimizer, epoch, loss_fn):
+    def train(self, log_interval, optimizer, epochs, loss_fn):
         self.model.train()
-        for batch_idx, (data, target) in enumerate(self._train_loader):
-            data, target = data.to(self._device), target.to(self._device)
-            optimizer.zero_grad()
-            output = self.model(data)
-            loss = loss_fn(output, target)
-            loss.backward()
-            optimizer.step()
-            if batch_idx % log_interval == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx * len(data), len(self._train_loader.dataset),
-                    100. * batch_idx / len(self._train_loader), loss.item()))
+        
+        best_acc = -1
+        best_weights = None
+
+        for epoch in range(epochs):
+            for batch_idx, (data, target) in enumerate(self._train_loader):
+                data, target = data.to(self._device), target.to(self._device)
+                optimizer.zero_grad()
+                output = self.model(data)
+                loss = loss_fn(output, target)
+                loss.backward()
+                optimizer.step()
+                if batch_idx % log_interval == 0:
+                    print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                        epoch, batch_idx * len(data), len(self._train_loader.dataset),
+                        100. * batch_idx / len(self._train_loader), loss.item()))
+            
+            with torch.no_grad():
+                acc = self.test(loss_fn)
+
+                if acc > best_acc:
+                    best_acc = acc
+                    best_weights = copy.deepcopy(self.model.state_dict())
+        
+        return best_acc, best_weights
     
     def test(self, loss_fn):
         self.model.eval()

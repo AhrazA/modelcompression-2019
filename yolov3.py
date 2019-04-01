@@ -355,10 +355,6 @@ class YoloWrapper():
             if best_loss == rloss['loss']:
                 os.system('cp ' + latest + ' ' + best)
 
-            # Save backup weights every 5 epochs (optional)
-            # if (epoch > 0) & (epoch % 5 == 0):
-            #     os.system('cp ' + latest + ' ' + weights + 'backup{}.pt'.format(epoch)))
-
             # Calculate mAP
             with torch.no_grad():
                 mAP, R, P = self.test(val_dataloader)
