@@ -6,6 +6,8 @@ from sklearn.cluster import KMeans
 from scipy.sparse import csc_matrix, csr_matrix
 import pdb
 import datetime
+from .kmeans import lloyd
+import matplotlib.pyplot as plt
 
 def get_all_weights(model):
     weights = []
@@ -47,22 +49,23 @@ def quantize_k_means(model, bits=5):
             continue
 
         dev = module.weight.device
-        weight = module.weight.data.cpu().numpy()
+        weight = module.weight.data
         original_shape = weight.shape
-        weight = np.reshape(weight, (2, -1))
-        mat = csr_matrix(weight)
-        min_ = min(mat.data)
-        max_ = max(mat.data)
-        space = np.linspace(min_, max_, num=2**bits)
-        kmeans = KMeans(n_clusters=len(space), init=space.reshape(-1,1), n_init=1, precompute_distances=True, algorithm="full")
-        kmeans.fit(mat.reshape(-1,1))
+        weight = weight.reshape(-1, 1)
+        cluster_labels, centroids = lloyd(weight, 2**bits)
 
-        weight = kmeans.cluster_centers_[kmeans.labels_].reshape(original_shape)
-        weight_tensor = torch.tensor(weight, requires_grad=True).to(dev)
-
-        # Use register_hooks to recalculate the gradients
-        module.weight.data = weight_tensor
-        module.weight.register_hook(gen_param_hook(torch.from_numpy(kmeans.labels_), dev))
+        # fig, ax = plt.subplots()
+        # for i in range(2**bits):
+        #     cpu_labels = cluster_labels.cpu().numpy()
+        #     cpu_weight = weight.cpu().numpy()
+        #     indices = np.where(cpu_labels == i)[0]
+        #     selected = cpu_weight[indices]
+        #     ax.plot(selected, '.', label=str(i))
+        # fig.show()
+        
+        weight = centroids[cluster_labels].reshape(original_shape)
+        module.weight.data = weight
+        # module.weight.register_hook(gen_param_hook(torch.from_numpy(kmeans.labels_), dev))
 
 def gen_param_hook(c_labels, dev):
     
