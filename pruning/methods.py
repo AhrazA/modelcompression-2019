@@ -57,7 +57,6 @@ def quantize_k_means(model, bits=5):
         weight = weight.reshape(-1, 1)
         bit_multiplier = int(weight.nelement() / 300000) + 1
         n_clusters = bit_multiplier*2**(bits)
-        print(bit_multiplier, n_clusters)
 
         cluster_labels, centroids = lloyd(weight, n_clusters)
         
@@ -72,16 +71,16 @@ def quantize_k_means(model, bits=5):
         
         weight = centroids[cluster_labels].reshape(original_shape)
         module.weight.data = weight
-        module.weight.register_hook(gen_param_hook(cluster_labels, dev))
+        module.weight.register_hook(gen_param_hook(cluster_labels, dev, n_clusters))
 
-def gen_param_hook(c_labels, dev):
+def gen_param_hook(c_labels, dev, n_clusters):
     
     def hook(grad):
         grad_original_shape = grad.shape
         reshape_start_time = datetime.datetime.now()
         grads = grad.reshape(-1, 1)
         grad_indices = torch.arange(0, grads.nelement(), device=dev)
-        updates = torch.zeros(len(c_labels.unique()), layout=c_labels.layout, device=dev, dtype=torch.float)
+        updates = torch.zeros(n_clusters, layout=c_labels.layout, device=dev, dtype=torch.float)
         reshape_end_time = datetime.datetime.now()
 
         # print(f"Reshape took: {reshape_end_time - reshape_start_time}")
