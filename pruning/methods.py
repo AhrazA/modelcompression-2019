@@ -71,43 +71,32 @@ def quantize_k_means(model, bits=5):
         # fig.show()
         
         weight = centroids[cluster_labels].reshape(original_shape)
-        module.weight.data = weight.data
-        # module.weight.register_hook(gen_param_hook(torch.from_numpy(kmeans.labels_), dev))
+        module.weight.data = weight
+        module.weight.register_hook(gen_param_hook(cluster_labels, dev))
 
 def gen_param_hook(c_labels, dev):
     
     def hook(grad):
-        # print(f"Retraining start time {datetime.datetime.now()}")
-        print(grad.device)
         grad_original_shape = grad.shape
         reshape_start_time = datetime.datetime.now()
         grads = grad.reshape(-1, 1)
+        grad_indices = torch.arange(0, grads.nelement(), device=dev)
+        updates = torch.zeros(len(c_labels.unique()), layout=c_labels.layout, device=dev, dtype=torch.float)
         reshape_end_time = datetime.datetime.now()
 
-        print(f"Reshape took: {reshape_end_time - reshape_start_time}")
+        # print(f"Reshape took: {reshape_end_time - reshape_start_time}")
 
-        updates = {}
         start_time = datetime.datetime.now()
 
         enumartion_start_time = datetime.datetime.now()
-
-        for i, g in enumerate(grads):
-            cluster_id = c_labels[i].item()
-
-            if cluster_id not in updates:
-                updates[cluster_id] = g
-            else:
-                updates[cluster_id] += g
-
+        updates[c_labels[grad_indices]] += grads[grad_indices].flatten()
         enumeration_end_time = datetime.datetime.now()
 
-        print(f"Enumeration time took: {enumeration_end_time - enumartion_start_time}")
+        # print(f"Enumeration time took: {enumeration_end_time - enumartion_start_time}")
 
-        updated_grads = torch.tensor([updates[c_labels[i].item()] for i in range(len(grads))]).to(dev).reshape(grad_original_shape)
-
-        # print(f"Retrain end time {datetime.datetime.now()}")
+        updated_grads = updates[c_labels].reshape(grad_original_shape)
         end_time = datetime.datetime.now()
-        print(f"Weight vector with {i} gradients took {end_time - start_time} to cluster gradient updates.")
+        # print(f"Weight vector with {updated_grads.nelement()} gradients took {end_time - start_time} to cluster gradient updates.")
 
         return updated_grads
     
