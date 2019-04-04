@@ -7,7 +7,7 @@ from scipy.sparse import csc_matrix, csr_matrix
 import pdb
 import datetime
 from .kmeans import lloyd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 def get_all_weights(model):
     weights = []
@@ -45,15 +45,22 @@ def gen_masks_recursive(model, threshold):
 
 def quantize_k_means(model, bits=5):
     for module in model.children():
-        if 'weight' not in dir(module):
+        if 'List' in module.__class__.__name__ or 'Sequential' in module.__class__.__name__:
+            quantize_k_means(module, bits=bits)
             continue
+        if 'weight' not in dir(module):
+            continue        
 
         dev = module.weight.device
         weight = module.weight.data
         original_shape = weight.shape
         weight = weight.reshape(-1, 1)
-        cluster_labels, centroids = lloyd(weight, 2**bits)
+        bit_multiplier = int(weight.nelement() / 300000) + 1
+        n_clusters = bit_multiplier*2**(bits)
+        print(bit_multiplier, n_clusters)
 
+        cluster_labels, centroids = lloyd(weight, n_clusters)
+        
         # fig, ax = plt.subplots()
         # for i in range(2**bits):
         #     cpu_labels = cluster_labels.cpu().numpy()
@@ -64,7 +71,7 @@ def quantize_k_means(model, bits=5):
         # fig.show()
         
         weight = centroids[cluster_labels].reshape(original_shape)
-        module.weight.data = weight
+        module.weight.data = weight.data
         # module.weight.register_hook(gen_param_hook(torch.from_numpy(kmeans.labels_), dev))
 
 def gen_param_hook(c_labels, dev):
