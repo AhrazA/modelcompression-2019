@@ -72,7 +72,7 @@ def quantize_k_means(model, bits=5, show_figures=False):
         
         weight = centroids[cluster_labels].reshape(original_shape)
         module.weight.data = weight
-        module.weight.register_hook(gen_param_hook(cluster_labels, dev, n_clusters))
+        # module.weight.register_hook(gen_param_hook(cluster_labels, dev, n_clusters))
 
 def gen_param_hook(c_labels, dev, n_clusters):
     

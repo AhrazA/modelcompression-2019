@@ -70,7 +70,9 @@ def classifier_config(config, args):
     print("Started quantizing")
     start_time = datetime.datetime.now()
 
-    quantize_k_means(model)
+    quantize_k_means(model, show_figures=True)
+
+    prune_rate(model)
     
     end_time = datetime.datetime.now()
     print(f"Finished quantizing. Time taken: {end_time - start_time}")
@@ -90,12 +92,14 @@ def yolo_config(config, args):
     optimizer = config['optimizer'](filter(lambda x: x.requires_grad, model.parameters()), lr=lr0, momentum=0.5)
 
     print("Loading dataloaders..")
-    val_dataloader = LoadImagesAndLabels(config['datasets']['test'], batch_size=32, img_size=config['image_size'])
+    val_dataloader = LoadImagesAndLabels(config['datasets']['val'], batch_size=32, img_size=config['image_size'])
 
     model.to(device)
 
     print("Loading pretrained weights..")
-    model.load_state_dict(torch.load(args.pretrained_weights))
+    model.load_state_dict(torch.load(args.pretrained_weights, map_location=device))
+
+    prune_rate(model)
 
     print("Quantizing..")
     quantize_k_means(model)
