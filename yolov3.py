@@ -271,6 +271,7 @@ class YoloWrapper():
     def __init__(self, device, model):
         self.device = device
         self.model = model
+        model.to(device)
 
     def train(self, train_dataloader, val_dataloader, epochs, optimizer, lr0, var=0, accumulated_batches=1):
         # Start training

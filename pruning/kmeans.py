@@ -47,10 +47,10 @@ def lin_spaced(X, n_clusters):
     min_ = torch.min(X)
     max_ = torch.max(X)
     space = torch.tensor(np.linspace(min_.cpu(), max_.cpu(), num=n_clusters), dtype=X.dtype, device=X.device)
-    return space
+    return space.unsqueeze(dim=1)
 
 def lloyd(X, n_clusters, device=0, tol=1e-4):
-    initial_state = forgy(X, n_clusters)
+    initial_state = lin_spaced(X, n_clusters)
 
     while True:
         dis = pairwise_distance(X, initial_state)
