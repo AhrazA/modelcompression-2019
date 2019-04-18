@@ -217,7 +217,7 @@ configurations = {
     }
 }
 
-def get_resnet(resnet_type_name, config, pretrained=False, **kwargs):
+def get_resnet(resnet_type_name, pretrained=False, **kwargs):
     config = configurations[resnet_type_name]
     model = config['type'](**config['model_args'], **kwargs)
 
