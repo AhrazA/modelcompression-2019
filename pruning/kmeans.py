@@ -55,7 +55,7 @@ def lloyd(X, n_clusters, device=0, tol=1e-4):
     while True:
         dis = pairwise_distance(X, initial_state)
 
-        choice_cluster = torch.argmin(dis, dim=0)
+        choice_cluster = torch.argmin(dis, dim=1)
         initial_state_pre = initial_state.clone()
 
         for index in range(n_clusters):

@@ -127,3 +127,9 @@ class fasterRCNN(nn.Module):
     def create_architecture(self):
         self._init_modules()
         self._init_weights()
+
+    def set_mask(self, masks):
+        iter_masks = iter(masks)
+        for index, layer in enumerate(self.children()):
+            if 'Masked' in str(type(layer)):
+                layer.set_mask(next(iter_masks))
