@@ -22,4 +22,4 @@ if __name__ == '__main__':
 
     for name, child in r.named_children():
         if name == 'RCNN_base':
-            pruning.methods.quantize_k_means(child)
+            pruning.methods.quantize_k_means(child, show_figures=True)

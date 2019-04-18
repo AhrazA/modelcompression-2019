@@ -45,11 +45,15 @@ def gen_masks_recursive(model, threshold):
 
 def quantize_k_means(model, bits=5, show_figures=False):
     for module in model.children():
-        if 'List' in module.__class__.__name__ or 'Sequential' in module.__class__.__name__:
+        if 'List' in module.__class__.__name__ or 'Sequential' in module.__class__.__name__ or 'Bottleneck' in module.__class__.__name__:
             quantize_k_means(module, bits=bits, show_figures=show_figures)
             continue
         if 'weight' not in dir(module):
-            continue        
+            continue
+        if 'BatchNorm' in module.__class__.__name__:
+            continue
+        if 'MaxPool' in module.__class__.__name__:
+            continue   
 
         dev = module.weight.device
         weight = module.weight.data
