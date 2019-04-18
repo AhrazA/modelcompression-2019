@@ -131,7 +131,7 @@ def classifier_config(config, args):
     prune_perc = prune_rate(model)    
 
     if (args.save_model):
-        torch.save(model.state_dict(), f'./models/{config["name"]}-pruned-{datetime.datetime.now().strftime('%Y%m%d%H%M')}.pt')
+        torch.save(model.state_dict(), f'./models/{config["name"]}-pruned-{datetime.datetime.now().strftime("%Y%m%d%H%M")}.pt')
 
     print(f"Pruned model: {config['name']}")
     print(f"Pre-pruning accuracy: {pre_prune_accuracy}")

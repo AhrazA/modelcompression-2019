@@ -4,6 +4,7 @@ from resnet import MaskedResNet18
 from yolov3 import MaskedDarknet, YoloWrapper
 from classifier import Classifier
 from torchvision import datasets, transforms
+from fasterrcnn.faster_rcnn import MaskedFasterRCNN
 import torch.nn.functional as F
 import torch.optim as optim
 
@@ -62,6 +63,15 @@ configurations = [
             'test': '/mnt/home/a318599/Bayesnn/yolov3/data/coco/test.txt',
             'val': '/mnt/home/a318599/Bayesnn/yolov3/data/coco/train.txt',
         },
+        'optimizer': optim.SGD
+    },
+    {
+        'name': 'FasterRCNN',
+        'type': 'rcnn',
+        'model': MaskedFasterRCNN,
+        'wrapper': Classifier,
+        'image_width': 335,
+        'image_height': 500,
         'optimizer': optim.SGD
     }
 ]

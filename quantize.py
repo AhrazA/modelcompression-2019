@@ -99,6 +99,8 @@ def yolo_config(config, args):
     print("Loading pretrained weights..")
     model.load_state_dict(torch.load(args.pretrained_weights, map_location=device))
 
+    print("Pre-quantized percentage of zeros..")
+
     prune_rate(model)
 
     print("Quantizing..")
@@ -106,6 +108,10 @@ def yolo_config(config, args):
 
     with torch.no_grad():
         wrapper.test(val_dataloader, img_size=config['image_size'], batch_size=32)
+    
+    print("Post-quantize percentage of zeros..")
+
+    prune_rate(model)
     
     return wrapper
 
