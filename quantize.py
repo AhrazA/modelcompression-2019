@@ -85,14 +85,14 @@ def yolo_config(config, args):
     config = [x for x in configurations if x['name'] == 'YOLOv3'][0]
     model = config['model'](config['config_path'])
 
-    device = 'cuda' if not args.no_cuda else 'cpu'
+    device = 'cuda:3' if not args.no_cuda else 'cpu'
 
     wrapper = YoloWrapper(device, model)
     lr0 = 0.001
     optimizer = config['optimizer'](filter(lambda x: x.requires_grad, model.parameters()), lr=lr0, momentum=0.5)
 
     print("Loading dataloaders..")
-    val_dataloader = LoadImagesAndLabels(config['datasets']['val'], batch_size=32, img_size=config['image_size'])
+    val_dataloader = LoadImagesAndLabels(config['datasets']['test'], batch_size=32, img_size=config['image_size'])
 
     model.to(device)
 
@@ -103,6 +103,8 @@ def yolo_config(config, args):
 
     print("Quantizing..")
     quantize_k_means(model)
+
+    prune_rate(model)
 
     with torch.no_grad():
         wrapper.test(val_dataloader, img_size=config['image_size'], batch_size=32)

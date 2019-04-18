@@ -23,7 +23,7 @@ def yolo_config(config, args):
     #     print("WARNING: Prune threshold seems too large.")
     #     if input("Input y if you are sure you want to continue.") != 'y': return
 
-    device = 'cpu' if args.no_cuda else 'cuda:0'
+    device = 'cpu' if args.no_cuda else 'cuda:3'
     model = config['model'](config['config_path'], device=device)
     wrapper = YoloWrapper(device, model)
     lr0 = 0.001
@@ -31,7 +31,7 @@ def yolo_config(config, args):
 
     print("Loading dataloaders..")
     train_dataloader = LoadImagesAndLabels(config['datasets']['train'], batch_size=args.batch_size, img_size=config['image_size'])
-    val_dataloader = LoadImagesAndLabels(config['datasets']['val'] if config['val_set_for_train'] == 'val' else config['datasets']['test'], batch_size=args.batch_size, img_size=config['image_size'])
+    val_dataloader = LoadImagesAndLabels(config['datasets']['test'], batch_size=args.batch_size, img_size=config['image_size'])
 
     if (args.pretrained_weights):
         print("Loading pretrained weights..")
@@ -131,7 +131,7 @@ def classifier_config(config, args):
     prune_perc = prune_rate(model)    
 
     if (args.save_model):
-        torch.save(model.state_dict(), f'./models/{config["name"]}-pruned-{datetime.datetime.now().strftime('%Y%m%d%H%M')}.pt')
+        torch.save(model.state_dict(), f'./models/{config["name"]}-pruned-{datetime.datetime.now().strftime("%Y%m%d%H%M")}.pt')
 
     print(f"Pruned model: {config['name']}")
     print(f"Pre-pruning accuracy: {pre_prune_accuracy}")

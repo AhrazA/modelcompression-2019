@@ -46,7 +46,7 @@ def forgy(X, n_clusters):
 def lin_spaced(X, n_clusters):
     min_ = torch.min(X)
     max_ = torch.max(X)
-    space = torch.tensor(np.linspace(min_.cpu(), max_.cpu(), num=n_clusters), dtype=X.dtype, device=X.device)
+    space = torch.tensor(np.linspace(min_.cpu().numpy(), max_.cpu().numpy(), num=n_clusters), dtype=X.dtype, device=X.device)
     return space.unsqueeze(dim=1)
 
 def lloyd(X, n_clusters, device=0, tol=1e-4):
