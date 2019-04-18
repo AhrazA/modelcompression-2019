@@ -417,7 +417,8 @@ class YoloWrapper():
                         # Extract index of largest overlap
                         best_i = np.argmax(iou)
                         # If overlap exceeds threshold and classification is correct mark as correct
-                        if iou[best_i] > iou_thres and obj_pred == labels[best_i, 0] and best_i not in detected:
+                        
+                        if iou[best_i] > iou_thres and torch.tensor(obj_pred) == labels[best_i, 0] and best_i not in detected:
                             correct.append(1)
                             detected.append(best_i)
                         else:

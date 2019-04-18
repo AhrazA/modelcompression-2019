@@ -46,7 +46,7 @@ def gen_masks_recursive(model, threshold):
 def quantize_k_means(model, bits=5, show_figures=False):
     for module in model.children():
         if 'List' in module.__class__.__name__ or 'Sequential' in module.__class__.__name__:
-            quantize_k_means(module, bits=bits)
+            quantize_k_means(module, bits=bits, show_figures=show_figures)
             continue
         if 'weight' not in dir(module):
             continue        
@@ -61,6 +61,7 @@ def quantize_k_means(model, bits=5, show_figures=False):
         cluster_labels, centroids = lloyd(weight, n_clusters)
         
         if show_figures:
+            print("Showing figs")
             fig, ax = plt.subplots()
             for i in range(2**bits):
                 cpu_labels = cluster_labels.cpu().numpy()
