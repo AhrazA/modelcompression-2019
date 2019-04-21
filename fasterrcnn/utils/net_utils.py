@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 import torchvision.models as models
-from utils.config import cfg
+from fasterrcnn.utils.config import cfg
 import cv2
 import pdb
 import random

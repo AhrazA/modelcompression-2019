@@ -14,11 +14,11 @@ import torch.nn as nn
 import numpy as np
 import math
 import yaml
-from utils.config import cfg
+from fasterrcnn.utils.config import cfg
 from .generate_anchors import generate_anchors
 from .bbox_transform import bbox_transform_inv, clip_boxes, clip_boxes_batch
 # from model.nms.nms_wrapper import nms
-from roi_layers import nms
+from fasterrcnn.roi_layers import nms
 import pdb
 
 DEBUG = False

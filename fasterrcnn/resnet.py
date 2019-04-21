@@ -2,8 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from utils.config import cfg
-from faster_rcnn import fasterRCNN
+from fasterrcnn.utils.config import cfg
+from fasterrcnn.faster_rcnn import fasterRCNN
 from pruning.masked_resnet import MaskedResNet101
 from pruning.masked_sequential import MaskedSequential
 

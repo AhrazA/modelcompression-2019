@@ -4,7 +4,7 @@ import os
 sys.path.append(os.path.abspath('../'))
 
 import pruning
-from resnet import MaskedFasterRCNN
+from fasterrcnn.resnet import MaskedFasterRCNN
 
 if __name__ == '__main__':
     r = MaskedFasterRCNN(('__background__',  # always index 0

@@ -5,7 +5,7 @@ from torch.autograd import Function
 from torch.autograd.function import once_differentiable
 from torch.nn.modules.utils import _pair
 
-from utils.config import cfg
+from fasterrcnn.utils.config import cfg
 
 import pdb
 

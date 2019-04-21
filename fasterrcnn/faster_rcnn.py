@@ -7,14 +7,14 @@ import torchvision.models as models
 from torch.autograd import Variable
 import numpy as np
 
-from utils.config import cfg
-from rpn.rpn import _RPN
-from roi_layers import ROIAlign, ROIPool
+from fasterrcnn.utils.config import cfg
+from fasterrcnn.rpn.rpn import _RPN
+from fasterrcnn.roi_layers import ROIAlign, ROIPool
 
-from rpn.proposal_target_layer_cascade import _ProposalTargetLayer
+from fasterrcnn.rpn.proposal_target_layer_cascade import _ProposalTargetLayer
 import time
 import pdb
-from utils.net_utils import _smooth_l1_loss, _crop_pool_layer, _affine_grid_gen, _affine_theta
+from fasterrcnn.utils.net_utils import _smooth_l1_loss, _crop_pool_layer, _affine_grid_gen, _affine_theta
 
 class fasterRCNN(nn.Module):
     """ faster RCNN """

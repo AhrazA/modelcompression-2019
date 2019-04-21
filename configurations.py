@@ -4,7 +4,7 @@ from resnet import MaskedResNet18
 from yolov3 import MaskedDarknet, YoloWrapper
 from classifier import Classifier
 from torchvision import datasets, transforms
-from fasterrcnn.faster_rcnn import MaskedFasterRCNN
+from fasterrcnn.resnet import MaskedFasterRCNN
 import torch.nn.functional as F
 import torch.optim as optim
 

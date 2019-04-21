@@ -1,6 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # from ._utils import _C
-from utils.config import cfg
+from fasterrcnn.utils.config import cfg
 
 nms = cfg.TEST.NMS
 # nms.__doc__ = """

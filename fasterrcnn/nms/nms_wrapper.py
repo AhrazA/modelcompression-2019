@@ -5,7 +5,7 @@
 # Written by Ross Girshick
 # --------------------------------------------------------
 import torch
-from utils.config import cfg
+from fasterrcnn.utils.config import cfg
 if torch.cuda.is_available():
     from nms.nms_gpu import nms_gpu
 from nms.nms_cpu import nms_cpu
