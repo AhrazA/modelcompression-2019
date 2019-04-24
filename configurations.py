@@ -67,7 +67,7 @@ configurations = [
     },
     {
         'name': 'FasterRCNN',
-        'type': 'rcnn',
+        'type': 'frcnn',
         'model': MaskedFasterRCNN,
         'wrapper': Classifier,
         'image_width': 335,

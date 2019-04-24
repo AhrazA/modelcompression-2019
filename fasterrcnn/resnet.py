@@ -15,10 +15,10 @@ import math
 import torch.utils.model_zoo as model_zoo
 
 class MaskedFasterRCNN(fasterRCNN):
-  def __init__(self, classes, num_layers=101, pretrained=False, class_agnostic=False):
-    self.model_path = 'data/pretrained_model/resnet101_caffe.pth'
+  def __init__(self, classes, num_layers=101, model_path=None, class_agnostic=False):
+    self.model_path = model_path
     self.dout_base_model = 1024
-    self.pretrained = pretrained
+    self.pretrained = model_path == None
     self.class_agnostic = class_agnostic
 
     fasterRCNN.__init__(self, classes, class_agnostic)

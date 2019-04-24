@@ -140,6 +140,35 @@ def classifier_config(config, args):
 
     return wrapper
 
+def frcnn_config(config, args):
+    classes = ('__background__',  # always index 0
+        'aeroplane', 'bicycle', 'bird', 'boat',
+        'bottle', 'bus', 'car', 'cat', 'chair',
+        'cow', 'diningtable', 'dog', 'horse',
+        'motorbike', 'person', 'pottedplant',
+        'sheep', 'sofa', 'train', 'tvmonitor')
+
+    print(args.pretrained_weights)
+
+    model = config['model'](
+        classes,
+        model_path = args.pretrained_weights
+    )
+
+    model.create_architecture()
+    pre_prune_accuracy = 
+
+    # masks = pruning.methods.weight_prune(r, 80.)
+    # r.set_mask(masks)
+    # pruning.methods.prune_rate(r)
+
+    # for name, child in r.named_children():
+    #     if name == 'RCNN_base':
+    #         pruning.methods.quantize_k_means(child, show_figures=True)
+
+
+
+
 def main():
     parser = argparse.ArgumentParser(description='Prunes a network.')
 
@@ -170,6 +199,9 @@ def main():
     
     if chosen_config[0]['type'] == 'yolo':
         wrapper = yolo_config(chosen_config[0], args)
+    
+    if chosen_config[0]['type'] == 'frcnn':
+        wrapper = frcnn_config(chosen_config[0], args)
     
 if __name__ == '__main__':
     main()
