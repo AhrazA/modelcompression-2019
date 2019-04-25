@@ -59,9 +59,9 @@ configurations = [
         'config_path': './yolo.cfg',
         'image_size': 416,
         'datasets': {
-            'train': '/mnt/home/a318599/Bayesnn/yolov3/data/coco/train.txt',
-            'test': '/mnt/home/a318599/Bayesnn/yolov3/data/coco/test.txt',
-            'val': '/mnt/home/a318599/Bayesnn/yolov3/data/coco/train.txt',
+            'train': 'D:\data\coco2014\\train.txt',
+            'test': 'D:\data\coco2014\\test.txt',
+            'val': 'D:\data\coco2014\\train.txt',
         },
         'optimizer': optim.SGD
     },

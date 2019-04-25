@@ -12,7 +12,8 @@ if __name__ == '__main__':
                          'bottle', 'bus', 'car', 'cat', 'chair',
                          'cow', 'diningtable', 'dog', 'horse',
                          'motorbike', 'person', 'pottedplant',
-                         'sheep', 'sofa', 'train', 'tvmonitor'))
+                         'sheep', 'sofa', 'train', 'tvmonitor'),
+                         model_path='C:\\Users\\Ahraz\\Documents\\mastersthesis\\masters-thesis-2019\\models\\resnet101.pth')
     
     r.create_architecture()
 

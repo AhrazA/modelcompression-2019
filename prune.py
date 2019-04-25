@@ -13,6 +13,7 @@ from pruning.utils import to_var
 from resnet import MaskedResNet18, MaskedResNet34, MaskedResNet50, MaskedResNet101, MaskedResNet152
 from classifier_utils import setup_default_args
 from yolov3 import LoadImagesAndLabels, YoloWrapper
+from fasterrcnn.wrapper import FasterRCNNWrapper
 
 from tensorboardX import SummaryWriter
 
@@ -156,7 +157,11 @@ def frcnn_config(config, args):
     )
 
     model.create_architecture()
-    pre_prune_accuracy = 
+
+    wrapper = FasterRCNNWrapper('cpu' if args.no_cuda else 'cuda', model)
+    wrapper.train(2, args.lr, args.epochs)
+
+    # pre_prune_accuracy = 
 
     # masks = pruning.methods.weight_prune(r, 80.)
     # r.set_mask(masks)

@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 def nms_cpu(dets, thresh):
+    print(dets.shape)
     dets = dets.numpy()
     x1 = dets[:, 0]
     y1 = dets[:, 1]
