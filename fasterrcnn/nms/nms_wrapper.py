@@ -6,8 +6,8 @@
 # --------------------------------------------------------
 import torch
 from fasterrcnn.utils.config import cfg
-# if torch.cuda.is_available():
-    # from fasterrcnn.nms.nms_gpu import nms_gpu
+if torch.cuda.is_available():
+    from fasterrcnn.nms.nms_gpu import nms_gpu
 from fasterrcnn.nms.nms_cpu import nms_cpu
 
 def nms(dets, thresh, force_cpu=False):
@@ -17,7 +17,5 @@ def nms(dets, thresh, force_cpu=False):
     # ---numpy version---
     # original: return gpu_nms(dets, thresh, device_id=cfg.GPU_ID)
     # ---pytorch version---
-    device = dets.device
-    ret = nms_cpu(dets.cpu(), thresh)
-    ret.to(device)
-    return ret
+
+    return nms_gpu(dets, thresh) if force_cpu == False else nms_cpu(dets, thresh)

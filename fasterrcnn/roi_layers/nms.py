@@ -1,7 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
-# from ._utils import _C
-from fasterrcnn.utils.config import cfg
+from fasterrcnn.roi_layers import _C
+# from fasterrcnn.utils.config import cfg
 
-nms = cfg.TEST.NMS
+nms = _C.nms
 # nms.__doc__ = """
 # This function performs Non-maximum suppresion"""

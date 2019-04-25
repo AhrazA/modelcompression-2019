@@ -6,7 +6,7 @@ from torch.autograd.function import once_differentiable
 from torch.nn.modules.utils import _pair
 
 from fasterrcnn.utils.config import cfg
-
+from fasterrcnn.roi_layers import _C
 
 class _ROIPool(Function):
     @staticmethod
