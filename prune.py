@@ -154,24 +154,20 @@ def frcnn_config(config, args):
         # model_path = args.pretrained_weights
     )
 
-    model._init_modules()
+    model.create_architecture()
 
     if args.pretrained_weights:
+        print("Loading weights ", args.pretrained_weights)
         state_dict = torch.load(args.pretrained_weights)
         
         if 'model' in state_dict.keys():
             state_dict = state_dict['model']
-
-        import pdb
-        pdb.set_trace()
-
+        
         model.load_state_dict(state_dict)
-
-    model.create_architecture()
 
     wrapper = FasterRCNNWrapper('cpu' if args.no_cuda else 'cuda', model)
     # wrapper.train(2, args.lr, args.epochs)
-    wrapper.test(1)
+    wrapper.test(args.batch_size)
 
 
     return wrapper
