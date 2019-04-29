@@ -149,18 +149,32 @@ def frcnn_config(config, args):
         'motorbike', 'person', 'pottedplant',
         'sheep', 'sofa', 'train', 'tvmonitor')
 
-    print(args.pretrained_weights)
-
     model = config['model'](
-        classes,
-        model_path = args.pretrained_weights
+        classes
+        # model_path = args.pretrained_weights
     )
+
+    model._init_modules()
+
+    if args.pretrained_weights:
+        state_dict = torch.load(args.pretrained_weights)
+        
+        if 'model' in state_dict.keys():
+            state_dict = state_dict['model']
+
+        import pdb
+        pdb.set_trace()
+
+        model.load_state_dict(state_dict)
 
     model.create_architecture()
 
     wrapper = FasterRCNNWrapper('cpu' if args.no_cuda else 'cuda', model)
-    wrapper.train(2, args.lr, args.epochs)
+    # wrapper.train(2, args.lr, args.epochs)
+    wrapper.test(1)
 
+
+    return wrapper
     # pre_prune_accuracy = 
 
     # masks = pruning.methods.weight_prune(r, 80.)

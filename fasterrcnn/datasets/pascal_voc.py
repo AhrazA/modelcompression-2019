@@ -61,7 +61,7 @@ class pascal_voc(imdb):
         self._comp_id = 'comp4'
 
         # PASCAL specific config options
-        self.config = {'cleanup': True,
+        self.config = {'cleanup': False,
                        'use_salt': True,
                        'use_diff': False,
                        'matlab_eval': False,
@@ -288,11 +288,7 @@ class pascal_voc(imdb):
                                        dets[k, 2] + 1, dets[k, 3] + 1))
 
     def _do_python_eval(self, output_dir='output'):
-        annopath = os.path.join(
-            self._devkit_path,
-            'VOC' + self._year,
-            'Annotations',
-            '{:s}.xml')
+        annopath = self._devkit_path + os.sep + 'VOC' + self._year + os.sep + 'Annotations' + os.sep + '{:s}.xml'
         imagesetfile = os.path.join(
             self._devkit_path,
             'VOC' + self._year,

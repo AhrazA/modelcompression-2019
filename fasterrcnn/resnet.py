@@ -18,7 +18,7 @@ class MaskedFasterRCNN(fasterRCNN):
   def __init__(self, classes, num_layers=101, model_path=None, class_agnostic=False):
     self.model_path = model_path
     self.dout_base_model = 1024
-    self.pretrained = model_path == None
+    self.pretrained = model_path != None
     self.class_agnostic = class_agnostic
 
     fasterRCNN.__init__(self, classes, class_agnostic)
@@ -29,6 +29,7 @@ class MaskedFasterRCNN(fasterRCNN):
     if self.pretrained == True:
       print("Loading pretrained weights from %s" %(self.model_path))
       state_dict = torch.load(self.model_path)
+
       resnet.load_state_dict({k:v for k,v in state_dict.items() if k in resnet.state_dict()})
 
     # Build resnet.
