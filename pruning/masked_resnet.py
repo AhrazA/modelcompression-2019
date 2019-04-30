@@ -55,18 +55,32 @@ class MaskedBasicBlock(nn.Module):
 class MaskedBottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, is_fasterrcnn=False):
         super(MaskedBottleneck, self).__init__()
-        self.conv1 = conv1x1(inplanes, planes)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = conv3x3(planes, planes, stride)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = conv1x1(planes, planes * self.expansion)
-        self.bn3 = nn.BatchNorm2d(planes * self.expansion)
-        self.relu = nn.ReLU(inplace=True)
-        self.downsample = downsample
-        self.stride = stride
-    
+
+        if not is_fasterrcnn:
+            self.conv1 = conv1x1(inplanes, planes)
+            self.bn1 = nn.BatchNorm2d(planes)
+            self.conv2 = conv3x3(planes, planes, stride)
+            self.bn2 = nn.BatchNorm2d(planes)
+            self.conv3 = conv1x1(planes, planes * self.expansion)
+            self.bn3 = nn.BatchNorm2d(planes * self.expansion)
+            self.relu = nn.ReLU(inplace=True)
+            self.downsample = downsample
+            self.stride = stride
+        
+        else:
+            self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride, bias=False) # change
+            self.bn1 = nn.BatchNorm2d(planes)
+            self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, # change
+                        padding=1, bias=False)
+            self.bn2 = nn.BatchNorm2d(planes)
+            self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+            self.bn3 = nn.BatchNorm2d(planes * 4)
+            self.relu = nn.ReLU(inplace=True)
+            self.downsample = downsample
+            self.stride = stride
+            
     def forward(self, x):
         identity = x
 
@@ -95,7 +109,7 @@ class MaskedBottleneck(nn.Module):
         self.conv3.set_mask(masks[2])
 
 class MaskedResNet(nn.Module):
-    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False):
+    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False, is_fasterrcnn=False):
         super(MaskedResNet, self).__init__()
         self.inplanes = 64
         self.conv1 = MaskedConv2d(3, 64, kernel_size=7, stride=2, padding=3,
@@ -103,10 +117,10 @@ class MaskedResNet(nn.Module):
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        self.layer1 = self._make_layer(block, 64, layers[0], is_fasterrcnn=is_fasterrcnn)
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2, is_fasterrcnn=is_fasterrcnn)
+        self.layer3 = self._make_layer(block, 256, layers[2], stride=2, is_fasterrcnn=is_fasterrcnn)
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=2, is_fasterrcnn=is_fasterrcnn)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = MaskedLinear(512 * block.expansion, num_classes)
 

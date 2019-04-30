@@ -24,7 +24,7 @@ class MaskedFasterRCNN(fasterRCNN):
     fasterRCNN.__init__(self, classes, class_agnostic)
 
   def _init_modules(self):
-    resnet = MaskedResNet101()
+    resnet = MaskedResNet101(is_fasterrcnn=True)
 
     if self.pretrained == True:
       print("Loading pretrained weights from %s" %(self.model_path))
