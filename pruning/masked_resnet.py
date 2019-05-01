@@ -70,12 +70,12 @@ class MaskedBottleneck(nn.Module):
             self.stride = stride
         
         else:
-            self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride, bias=False) # change
+            self.conv1 = MaskedConv2d(inplanes, planes, kernel_size=1, stride=stride, bias=False) # change
             self.bn1 = nn.BatchNorm2d(planes)
-            self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, # change
+            self.conv2 = MaskedConv2d(planes, planes, kernel_size=3, stride=1, # change
                         padding=1, bias=False)
             self.bn2 = nn.BatchNorm2d(planes)
-            self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+            self.conv3 = MaskedConv2d(planes, planes * 4, kernel_size=1, bias=False)
             self.bn3 = nn.BatchNorm2d(planes * 4)
             self.relu = nn.ReLU(inplace=True)
             self.downsample = downsample
@@ -141,7 +141,7 @@ class MaskedResNet(nn.Module):
                 elif isinstance(m, MaskedBasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)
 
-    def _make_layer(self, block, planes, blocks, stride=1):
+    def _make_layer(self, block, planes, blocks, stride=1, is_fasterrcnn=False):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = MaskedSequential(
@@ -150,10 +150,10 @@ class MaskedResNet(nn.Module):
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
+        layers.append(block(self.inplanes, planes, stride, downsample, is_fasterrcnn=is_fasterrcnn))
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(block(self.inplanes, planes))
+            layers.append(block(self.inplanes, planes, is_fasterrcnn=is_fasterrcnn))
 
         return MaskedSequential(*layers)
 

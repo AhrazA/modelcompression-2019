@@ -209,8 +209,8 @@ class FasterRCNNWrapper():
                     loss_temp = 0
                     start = time.time()
 
-    def test(self, batch_size):
-        cfg_from_file('/mnt/home/a318599/Bayesnn/masters-thesis-2019/fasterrcnn/res101.yml')
+    def test(self):
+        cfg_from_file('C:\\Users\\Ahraz\\Documents\\mastersthesis\\masters-thesis-2019\\fasterrcnn\\res101.yml')
         cfg_from_list(self.set_cfgs)        
         cfg.TRAIN.USE_FLIPPED = False
         
@@ -352,7 +352,9 @@ class FasterRCNNWrapper():
             pickle.dump(all_boxes, f, pickle.HIGHEST_PROTOCOL)
 
         print('Evaluating detections')
-        imdb.evaluate_detections(all_boxes, output_dir)
+        aps = imdb.evaluate_detections(all_boxes, output_dir)
 
         end = time.time()
         print("test time: %0.4fs" % (end - start))
+
+        return sum(aps) / len(aps)

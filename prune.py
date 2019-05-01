@@ -156,6 +156,8 @@ def frcnn_config(config, args):
 
     model.create_architecture()
 
+    wrapper = FasterRCNNWrapper('cpu' if args.no_cuda else 'cuda', model)
+
     if args.pretrained_weights:
         print("Loading weights ", args.pretrained_weights)
         state_dict = torch.load(args.pretrained_weights)
@@ -164,25 +166,44 @@ def frcnn_config(config, args):
             state_dict = state_dict['model']
         
         model.load_state_dict(state_dict)
+    else:
+        wrapper.train(args.batch_size, args.lr, args.epochs)
 
-    wrapper = FasterRCNNWrapper('cpu' if args.no_cuda else 'cuda', model)
-    # wrapper.train(2, args.lr, args.epochs)
-    wrapper.test(args.batch_size)
+    pre_prune_mAP = wrapper.test()
+    # pre_prune_mAP = 0.6748
 
+    prune_perc = 0. if args.start_at_prune_rate is None else args.start_at_prune_rate
+    prune_iter = 0
+    curr_mAP = pre_prune_mAP
+
+    while (curr_mAP - pre_prune_mAP) > -args.prune_threshold:
+        prune_iter += 1
+        prune_perc += 5.
+        masks = weight_prune(model, prune_perc)
+        model.set_mask(masks)
+
+        if not args.no_retrain:
+            print(f"Retraining at prune percentage {prune_perc}..")
+            wrapper.train(args.batch_size, args.lr, args.epochs)
+
+        else:
+            with torch.no_grad():
+                curr_mAP = wrapper.test()
+
+        print(f"mAP achieved: {curr_mAP}")
+        print(f"Change in mAP: {curr_mAP - pre_prune_mAP}")
+
+    prune_perc = prune_rate(model)
+
+    if (args.save_model):
+        torch.save(model.state_dict(), f'{config["name"]}-pruned-{datetime.datetime.now().strftime("%Y%m%d%H%M")}.pt')
+
+    print(f"Pruned model: {config['name']}")
+    print(f"Pre-pruning mAP: {pre_prune_mAP}")
+    print(f"Post-pruning mAP: {curr_mAP}")
+    print(f"Percentage of zeroes: {prune_perc}")
 
     return wrapper
-    # pre_prune_accuracy = 
-
-    # masks = pruning.methods.weight_prune(r, 80.)
-    # r.set_mask(masks)
-    # pruning.methods.prune_rate(r)
-
-    # for name, child in r.named_children():
-    #     if name == 'RCNN_base':
-    #         pruning.methods.quantize_k_means(child, show_figures=True)
-
-
-
 
 def main():
     parser = argparse.ArgumentParser(description='Prunes a network.')
