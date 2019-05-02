@@ -114,7 +114,8 @@ class FasterRCNNWrapper():
         imdb, roidb, ratio_list, ratio_index = combined_roidb(self.imdb_name)
         train_size = len(roidb)
 
-        cfg_from_list(self.set_cfgs.append(['MAX_NUM_GT_BOXES', '20']))
+        self.set_cfgs += ['MAX_NUM_GT_BOXES', '20']
+        cfg_from_list(self.set_cfgs)
         cfg_from_file('/mnt/home/a318599/Bayesnn/masters-thesis-2019/fasterrcnn/res101.yml')
 
         print('{:d} roidb entries'.format(len(roidb)))
@@ -152,7 +153,10 @@ class FasterRCNNWrapper():
         iters_per_epoch = int(train_size / batch_size)
         lr_decay_step = 5
         lr_decay_gamma = 0.1
-        disp_interval = 100
+        disp_interval = 10
+
+        best_map = -1.
+        best_weights = None
 
         for epoch in range(epochs):
             # setting to train mode
@@ -209,8 +213,15 @@ class FasterRCNNWrapper():
                     loss_temp = 0
                     start = time.time()
 
+            curr_mAP = self.test()
+            if curr_mAP > best_map:
+                best_weights = self.model.state_dict()
+                best_map = curr_mAP
+        
+        return best_map, best_weights
+
     def test(self):
-        cfg_from_file('C:\\Users\\Ahraz\\Documents\\mastersthesis\\masters-thesis-2019\\fasterrcnn\\res101.yml')
+        cfg_from_file('/mnt/home/a318599/Bayesnn/masters-thesis-2019/fasterrcnn/res101.yml')
         cfg_from_list(self.set_cfgs)        
         cfg.TRAIN.USE_FLIPPED = False
         

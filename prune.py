@@ -170,7 +170,7 @@ def frcnn_config(config, args):
         wrapper.train(args.batch_size, args.lr, args.epochs)
 
     pre_prune_mAP = wrapper.test()
-    # pre_prune_mAP = 0.6748
+    # pre_prune_mAP = 0.6772
 
     prune_perc = 0. if args.start_at_prune_rate is None else args.start_at_prune_rate
     prune_iter = 0
@@ -184,11 +184,14 @@ def frcnn_config(config, args):
 
         if not args.no_retrain:
             print(f"Retraining at prune percentage {prune_perc}..")
-            wrapper.train(args.batch_size, args.lr, args.epochs)
+            curr_mAP, best_weights = wrapper.train(args.batch_size, args.lr, args.epochs)
 
+            print("Loading best weights from epoch at mAP ", curr_mAP)
+            model.load_state_dict(best_weights)
+        
         else:
             with torch.no_grad():
-                curr_mAP = wrapper.test()
+                curr_mAP, _ = wrapper.test()
 
         print(f"mAP achieved: {curr_mAP}")
         print(f"Change in mAP: {curr_mAP - pre_prune_mAP}")
