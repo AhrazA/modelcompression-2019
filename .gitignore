@@ -120,3 +120,4 @@ data/
 .vscode/
 runs/
 coco/
+output/
