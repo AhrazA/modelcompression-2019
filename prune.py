@@ -38,7 +38,7 @@ def yolo_config(config, args):
     #     print("WARNING: Prune threshold seems too large.")
     #     if input("Input y if you are sure you want to continue.") != 'y': return
 
-    device = 'cpu' if args.no_cuda else 'cuda:2'
+    device = 'cpu' if args.no_cuda else 'cuda:1'
     model = config['model'](config['config_path'], device=device)
     wrapper = YoloWrapper(device, model)
     lr0 = 0.001
@@ -215,11 +215,14 @@ def frcnn_config(config, args):
 
     model.create_architecture()
 
-    wrapper = FasterRCNNWrapper('cpu' if args.no_cuda else 'cuda:2', model)
+    wrapper = FasterRCNNWrapper('cpu' if args.no_cuda else 'cuda:0', model)
+
+    if args.tensorboard:
+        writer = SummaryWriter()
 
     if args.pretrained_weights:
         print("Loading weights ", args.pretrained_weights)
-        state_dict = torch.load(args.pretrained_weights, map_location=torch.device('cuda:2'))
+        state_dict = torch.load(args.pretrained_weights, map_location=torch.device('cuda:0'))
         
         if 'model' in state_dict.keys():
             state_dict = state_dict['model']
@@ -228,13 +231,21 @@ def frcnn_config(config, args):
     else:
         wrapper.train(args.batch_size, args.lr, args.epochs)
 
-    # pre_prune_mAP = wrapper.test()
-    pre_prune_mAP = 0.6772
+    pre_prune_mAP = wrapper.test()
+    # pre_prune_mAP = 0.6772
 
     prune_perc = 0. if args.start_at_prune_rate is None else args.start_at_prune_rate
     prune_iter = 0
     curr_mAP = pre_prune_mAP
 
+    if args.tensorboard:
+        writer.add_scalar('prune/accuracy', curr_mAP, prune_iter)
+        writer.add_scalar('prune/percentage', prune_perc, prune_iter)
+
+        for name, param in wrapper.model.named_parameters():
+            if 'bn' not in name:
+                writer.add_histogram(f'prune/preprune/{name}', param, prune_iter)
+    
     thresh_reached, _ = reached_threshold(args.prune_threshold, curr_mAP, pre_prune_mAP)
     while not thresh_reached:
         prune_iter += 1
@@ -251,8 +262,12 @@ def frcnn_config(config, args):
         
         else:
             with torch.no_grad():
-                curr_mAP, _ = wrapper.test()
+                curr_mAP = wrapper.test()
 
+        if args.tensorboard:
+            writer.add_scalar('prune/accuracy', curr_mAP, prune_iter)
+            writer.add_scalar('prune/percentage', prune_perc, prune_iter)
+        
         thresh_reached, diff = reached_threshold(args.prune_threshold, curr_mAP, pre_prune_mAP)
         
         print(f"mAP achieved: {curr_mAP}")
@@ -262,7 +277,12 @@ def frcnn_config(config, args):
 
     if (args.save_model):
         torch.save(model.state_dict(), f'{config["name"]}-pruned-{datetime.datetime.now().strftime("%Y%m%d%H%M")}.pt')
-
+    
+    if args.tensorboard:
+        for name, param in wrapper.model.named_parameters():
+            if 'weight' in name:
+                writer.add_histogram(f'prune/postprune/{name}', param, prune_iter + 1) 
+    
     print(f"Pruned model: {config['name']}")
     print(f"Pre-pruning mAP: {pre_prune_mAP}")
     print(f"Post-pruning mAP: {curr_mAP}")
