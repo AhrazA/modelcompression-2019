@@ -180,12 +180,22 @@ def create_modules(module_defs, device):
             filters = int(module_def['filters'])
             kernel_size = int(module_def['size'])
             pad = (kernel_size - 1) // 2 if int(module_def['pad']) else 0
-            modules.add_module('conv_%d' % i, MaskedConv2d(in_channels=output_filters[-1],
-                                                        out_channels=filters,
-                                                        kernel_size=kernel_size,
-                                                        stride=int(module_def['stride']),
-                                                        padding=pad,
-                                                        bias=not bn))
+
+            if filters != 255:
+                modules.add_module('conv_%d' % i, MaskedConv2d(in_channels=output_filters[-1],
+                                                            out_channels=filters,
+                                                            kernel_size=kernel_size,
+                                                            stride=int(module_def['stride']),
+                                                            padding=pad,
+                                                            bias=not bn))
+            else:
+                modules.add_module('conv_%d' % i, nn.Conv2d(in_channels=output_filters[-1],
+                                                            out_channels=filters,
+                                                            kernel_size=kernel_size,
+                                                            stride=int(module_def['stride']),
+                                                            padding=pad,
+                                                            bias=not bn))
+            
             if bn:
                 modules.add_module('batch_norm_%d' % i, nn.BatchNorm2d(filters))
             if module_def['activation'] == 'leaky':

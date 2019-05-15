@@ -59,9 +59,7 @@ def quantize_k_means(model, bits=5, show_figures=False):
         weight = module.weight.data
         original_shape = weight.shape
         weight = weight.reshape(-1, 1)
-        bit_multiplier = int(weight.nelement() / 300000) + 1
-        n_clusters = bit_multiplier*2**(bits)
-
+        n_clusters = (int(weight.nelement() / 300000) + 1)*2**(bits)
         cluster_labels, centroids = lloyd(weight, n_clusters)
         
         if show_figures:
