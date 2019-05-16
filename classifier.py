@@ -61,7 +61,7 @@ class Classifier:
                         else: outputs = torch.cat((outputs, self.model(data)))
                     
                     output = torch.empty_like(output)
-                    for i, repeated_preds in enumerate(torch.split(outputs, reps)):
+                    for i, repeated_preds in enumerate(torch.split(outputs, output.shape[0])):
                         output[i] = torch.mean(repeated_preds, 0)
                     
                     all_outputs.append(output)
