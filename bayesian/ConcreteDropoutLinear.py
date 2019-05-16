@@ -70,6 +70,6 @@ class ConcreteDropoutConvolutional(ConcreteDropoutLinear):
     
     def forward(self, x, layer):
         def input_dim_resolver(x):
-            return x[1].numel()
+            return x.shape[1]
 
         return super(ConcreteDropoutConvolutional, self).forward(x, layer, input_dim_resolver=input_dim_resolver)
