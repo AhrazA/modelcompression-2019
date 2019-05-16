@@ -43,14 +43,32 @@ class Classifier:
         
         return best_acc, best_weights
     
-    def test(self, loss_fn):
+    def test(self, loss_fn, multiple_pred=False, reps=5):
         self.model.eval()
         test_loss = 0
         correct = 0
         with torch.no_grad():
+            all_outputs = []
+
             for data, target in self._test_loader:
                 data, target = data.to(self._device), target.to(self._device)
-                output = self.model(data)
+
+                if multiple_pred:
+                    outputs = None
+                    for i in range(reps):
+                        output = self.model(data)
+                        if outputs is None: outputs = output
+                        else: outputs = torch.cat((outputs, self.model(data)))
+                    
+                    output = torch.empty_like(output)
+                    for i, repeated_preds in enumerate(torch.split(outputs, reps)):
+                        output[i] = torch.mean(repeated_preds, 0)
+                    
+                    all_outputs.append(output)
+                                    
+                else:
+                    output = self.model(data)
+                
                 test_loss += loss_fn(output, target, reduction='sum').item() # sum up batch loss
                 pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
                 correct += pred.eq(target.view_as(pred)).sum().item()
@@ -59,6 +77,9 @@ class Classifier:
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             final_loss, correct, len(self._test_loader.dataset),
             100. * correct / len(self._test_loader.dataset)))
+        
+        if multiple_pred:
+            return correct / len(self._test_loader.dataset), all_outputs
         
         return correct / len(self._test_loader.dataset)
         

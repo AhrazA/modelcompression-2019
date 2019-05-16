@@ -1,5 +1,6 @@
 from cifar_classifier import MaskedCifar
 from mnist_classifier import MaskedMNist
+from bayesian.MNIstDropout import MaskedConcreteMNist
 from resnet import MaskedResNet18
 from yolov3 import MaskedDarknet, YoloWrapper
 from classifier import Classifier
@@ -21,6 +22,20 @@ configurations = [
                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
                     ],
         'loss_fn': F.cross_entropy,
+        'optimizer': optim.SGD
+    },
+    {
+        'name': 'BayesMNistClassifier',
+        'type': 'classifier',
+        'model': MaskedConcreteMNist,
+        'wrapper': Classifier,
+        'dataset': datasets.MNIST,
+        'transforms':
+                    [
+                        transforms.ToTensor(),
+                        transforms.Normalize((0.1307,), (0.3081,))
+                    ],
+        'loss_fn': F.nll_loss,
         'optimizer': optim.SGD
     },
     {
