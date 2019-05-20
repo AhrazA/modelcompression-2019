@@ -14,8 +14,6 @@ from resnet import MaskedResNet18, MaskedResNet34, MaskedResNet50, MaskedResNet1
 from classifier_utils import setup_default_args
 from yolov3 import LoadImagesAndLabels, YoloWrapper
 
-from tensorboardX import SummaryWriter
-
 from configurations import configurations
 
 def main():
@@ -49,7 +47,7 @@ def main():
 def classifier_config(config, args):
     model = config['model']()
 
-    device = 'cuda' if not args.no_cuda else 'cpu'
+    device = 'cuda:1' if not args.no_cuda else 'cpu'
 
     train_data = config['dataset'](
         './data', train=True, download=True, transform=transforms.Compose(config['transforms'])
@@ -85,7 +83,7 @@ def yolo_config(config, args):
     config = [x for x in configurations if x['name'] == 'YOLOv3'][0]
     model = config['model'](config['config_path'])
 
-    device = 'cuda:3' if not args.no_cuda else 'cpu'
+    device = 'cuda:1' if not args.no_cuda else 'cpu'
 
     wrapper = YoloWrapper(device, model)
     lr0 = 0.001
@@ -103,17 +101,25 @@ def yolo_config(config, args):
 
     prune_rate(model)
 
+    # with torch.no_grad():
+    #     mAP, _, _ = wrapper.test(val_dataloader, img_size=config['image_size'], batch_size=32)
+    #     print("Accuracy: ", mAP)
+
     print("Quantizing..")
     quantize_k_means(model)
 
     prune_rate(model)
-
+    
     with torch.no_grad():
-        wrapper.test(val_dataloader, img_size=config['image_size'], batch_size=32)
+        mAP, _, _ = wrapper.test(val_dataloader, img_size=config['image_size'], batch_size=32)
+        print("Accuracy: ", mAP)
     
     print("Post-quantize percentage of zeros..")
 
     prune_rate(model)
+
+    if (args.save_model):
+        torch.save(model.state_dict(), f'./models/{config["name"]}-quantized-{datetime.datetime.now().strftime("%Y%m%d%H%M")}.pt')
     
     return wrapper
 

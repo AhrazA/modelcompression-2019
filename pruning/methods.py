@@ -8,6 +8,7 @@ import pdb
 import datetime
 from .kmeans import lloyd
 import matplotlib.pyplot as plt
+from torch.utils.tensorboard import SummaryWriter
 
 def get_all_weights(model):
     weights = []
@@ -61,20 +62,24 @@ def quantize_k_means(model, bits=5, show_figures=False):
         weight = weight.reshape(-1, 1)
         n_clusters = (int(weight.nelement() / 300000) + 1)*2**(bits)
         cluster_labels, centroids = lloyd(weight, n_clusters)
-        
+        centroid_weights = centroids[cluster_labels]
+
+        weight = torch.where(weight == 0, weight, centroid_weights).reshape(original_shape)
+
         if show_figures:
-            print("Showing figs")
+            writer = SummaryWriter()
             fig, ax = plt.subplots()
-            for i in range(2**bits):
-                cpu_labels = cluster_labels.cpu().numpy()
-                cpu_weight = weight.cpu().numpy()
-                indices = np.where(cpu_labels == i)[0]
-                selected = cpu_weight[indices]
-                ax.plot(selected, '.', label=str(i))
-            plt.show()
-        
-        weight = centroids[cluster_labels].reshape(original_shape)
-        module.weight.data = weight
+            writer.add_histogram(f'Quantized weights {module}', weight)
+            # for i in range(n_clusters):
+            #     cpu_labels = cluster_labels.cpu().numpy()
+            #     cpu_weight = weight.cpu().numpy()
+            #     indices = np.where(cpu_labels == i)[0]
+            #     selected = cpu_weight[indices]
+            #     ax.plot(selected, '.', label=str(i))
+            # plt.show()
+
+
+        module.weight.data = weight.reshape(original_shape)
         # module.weight.register_hook(gen_param_hook(cluster_labels, dev, n_clusters))
 
 def gen_param_hook(c_labels, dev, n_clusters):
