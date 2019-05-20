@@ -12,7 +12,7 @@ torch.cuda.manual_seed(0)
 
 class ConcreteDropoutLinear(nn.Module):
     def __init__(self, weight_regularizer=1e-6,
-                 dropout_regularizer=1e-5, init_min=0.1, init_max=0.1):
+                 dropout_regularizer=1e-5, init_min=0.1, init_max=0.1, temp = 0.1):
 
         super(ConcreteDropoutLinear, self).__init__()
         
@@ -23,9 +23,10 @@ class ConcreteDropoutLinear(nn.Module):
         init_max = np.log(init_max) - np.log(1. - init_max)
         
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(init_min, init_max))
+        self.temp = temp
         
     def forward(self, x, layer, input_dim_resolver=lambda x: x[0].numel()):
-        p = torch.sigmoid(self.p_logit)
+        p = torch.sigmoid(self.p_logit[0])
         
         out = layer(self._concrete_dropout(x, p))
         
@@ -46,7 +47,7 @@ class ConcreteDropoutLinear(nn.Module):
         
     def _concrete_dropout(self, x, p):
         eps = 1e-7
-        temp = 0.1
+        temp = self.temp
 
         unif_noise = torch.rand_like(x)
 

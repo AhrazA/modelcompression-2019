@@ -30,8 +30,8 @@ class MaskedConcreteMNist(MaskedMNist):
         self.relu = nn.ReLU()
         self.softmax = nn.LogSoftmax(dim=1)
 
-        self.conv_drop1 = ConcreteDropoutConvolutional(weight_regularizer=weight_regularizer, dropout_regularizer=dropout_regularizer)
-        self.conv_drop2 = ConcreteDropoutConvolutional(weight_regularizer=weight_regularizer, dropout_regularizer=dropout_regularizer)
+        self.conv_drop1 = ConcreteDropoutConvolutional(weight_regularizer=weight_regularizer, dropout_regularizer=dropout_regularizer, temp = 2. / 3.)
+        self.conv_drop2 = ConcreteDropoutConvolutional(weight_regularizer=weight_regularizer, dropout_regularizer=dropout_regularizer, temp = 2. / 3.)
 
         self.conc_drop1 = ConcreteDropoutLinear(weight_regularizer=weight_regularizer, dropout_regularizer=dropout_regularizer)
         self.conc_drop2 = ConcreteDropoutLinear(weight_regularizer=weight_regularizer, dropout_regularizer=dropout_regularizer)

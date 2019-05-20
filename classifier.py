@@ -49,6 +49,7 @@ class Classifier:
         correct = 0
         with torch.no_grad():
             all_outputs = []
+            stat_errors = []
 
             for data, target in self._test_loader:
                 data, target = data.to(self._device), target.to(self._device)
@@ -57,15 +58,29 @@ class Classifier:
                     outputs = None
                     for i in range(reps):
                         output = self.model(data)
-                        if outputs is None: outputs = output
-                        else: outputs = torch.cat((outputs, self.model(data)))
+                        if outputs is None: 
+                            outputs = output
+                            mean_value = output
+                            mean_squared_value = output.pow(2)
+                        else: 
+                            mean_value = mean_value + (output - mean_value) / (i + 1)
+                            mean_squared_value = mean_squared_value + (output.pow(2) - mean_squared_value) / (i + 1)
+                            std = torch.sqrt(mean_squared_value - mean_value.pow(2))
+                            # import pdb
+                            # pdb.set_trace()  
+
                     
-                    output = torch.empty_like(output)
-                    for i, repeated_preds in enumerate(torch.split(outputs, output.shape[0])):
-                        output[i] = torch.mean(repeated_preds, 0)
+                    # output = torch.empty_like(output)
+                    # for i, repeated_preds in enumerate(torch.split(outputs, output.shape[0])):
+                    #     output[i] = torch.mean(repeated_preds, 0)
                     
-                    all_outputs.append(output)
-                                    
+                    #all_outputs.append(output)
+                    output = mean_value
+                    std_output = std
+                    overall = torch.stack((output, std_output))
+                    std = torch.mean(std, 0)
+                    
+              
                 else:
                     output = self.model(data)
                 
@@ -79,7 +94,7 @@ class Classifier:
             100. * correct / len(self._test_loader.dataset)))
         
         if multiple_pred:
-            return correct / len(self._test_loader.dataset), all_outputs
+            return correct / len(self._test_loader.dataset)
         
         return correct / len(self._test_loader.dataset)
         
