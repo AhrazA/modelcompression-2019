@@ -38,10 +38,13 @@ def yolo_config(config, args):
 
     start_time = time.time()
     
-    with torch.no_grad():
-        pre_prune_mAP, _, _  = wrapper.test(val_dataloader, img_size=config['image_size'], batch_size=args.batch_size)
+    for i in range(args.repititions):
+        with torch.no_grad():
+            pre_prune_mAP, _, _  = wrapper.test(val_dataloader, img_size=config['image_size'], batch_size=args.batch_size)
 
     end_time = time.time()
+
+    print("Average inference time: ", (end_time - start_time) / args.repititions)
 
     return wrapper
 
@@ -111,9 +114,12 @@ def frcnn_config(config, args):
 
     start_time = time.time()
 
-    wrapper.test()
+    for i in range(args.repititions):
+        wrapper.test()
 
     end_time = time.time()
+
+    print("Average inference time: ", (end_time - start_time) / args.repititions)
 
     return wrapper
 
