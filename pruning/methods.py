@@ -23,14 +23,22 @@ def get_all_weights(model):
 
     return weights
 
-def gen_masks_for_layer(model, threshold):
+def gen_masks_for_layer(model, threshold, layerwise_thresh=False):
     # generate mask
     for p in model.parameters():
         if len(p.data.size()) != 1:
+            if layerwise_thresh:
+                #"""
+                #FROM:
+                #https://github.com/mightydeveloper/Deep-Compression-PyTorch/blob/a3ace3156b50bb29dd9d5e8498bdc79fe7aaac8c/net/prune.py#L39
+
+                s = 0.25
+                threshold = np.std(p.data.cpu().numpy()) * s
+
             pruned_inds = p.data.abs() > threshold
             return pruned_inds.float()
     
-def gen_masks_recursive(model, threshold):
+def gen_masks_recursive(model, threshold, layerwise_thresh=False):
     masks = []
     
     for module in model.children():
@@ -38,11 +46,12 @@ def gen_masks_recursive(model, threshold):
             print("Skipping masking of layer: ", module)
             continue
         if len(list(module.children())) != 0:
-            masks.append(gen_masks_recursive(module, threshold))
+            masks.append(gen_masks_recursive(module, threshold, layerwise_thresh=layerwise_thresh))
         else:
-            masks.append(gen_masks_for_layer(module, threshold))
+            masks.append(gen_masks_for_layer(module, threshold, layerwise_thresh=layerwise_thresh))
     
     return masks
+
 
 def quantize_k_means(model, bits=5, show_figures=False):
     for module in model.children():
@@ -110,14 +119,15 @@ def gen_param_hook(c_labels, dev, n_clusters):
     
     return hook
 
-def weight_prune(model, pruning_perc):
+def weight_prune(model, pruning_perc, layerwise_thresh=False):
     '''
     Prune pruning_perc% weights globally (not layer-wise)
     arXiv: 1606.09274
     '''    
     all_weights = get_all_weights(model)
     threshold = np.percentile(np.array(all_weights), pruning_perc)
-    return gen_masks_recursive(model, threshold)
+    return gen_masks_recursive(model, threshold, layerwise_thresh=layerwise_thresh)
+
 
 def prune_rate(model, verbose=True):
     """

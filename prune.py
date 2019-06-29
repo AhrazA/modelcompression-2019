@@ -116,7 +116,7 @@ def yolo_config(config, args):
 
 def classifier_config(config, args):
     model = config['model']()
-    device = 'cpu' if args.no_cuda else 'cuda:2'
+    device = 'cpu' if args.no_cuda else 'cuda:0'
     
     if args.tensorboard:
         writer = SummaryWriter()
@@ -161,7 +161,8 @@ def classifier_config(config, args):
         
         prune_iter += 1
         prune_perc += 5.
-        masks = weight_prune(model, prune_perc)
+        # masks = weight_prune(model, prune_perc)
+        masks = weight_prune(model, prune_perc, layerwise_thresh=True)
         model.set_mask(masks)
 
         if not args.no_retrain:
@@ -182,7 +183,7 @@ def classifier_config(config, args):
 
         print(f"Accuracy achieved: {curr_accuracy}")
         print(f"Change in accuracy: {diff}")
-    
+
     prune_perc = prune_rate(model)    
 
     if (args.save_model):
